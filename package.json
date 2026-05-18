@@ -1,0 +1,21 @@
+{
+  "name": "alive-buddy",
+  "version": "1.0.0",
+  "description": "An autonomous agent based on machine learning models and reAct loops.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/api/index.js",
+    "dev": "ts-node src/api/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "fastify": "^4.0.0",
+    "chromadb": "^1.0.0",
+    "sqlite3": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
