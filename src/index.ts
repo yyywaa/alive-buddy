@@ -10,9 +10,15 @@ const exampleConfig: CharacterConfig = {
   initial_state: { mood: 50, energy: 100, boredom: 0 },
   connection: {
     base_url: 'https://api.openai.com/v1',
-    send_url: 'https://api.openai.com/v1/chat/completions',
-    connect_head: 'Authorization: Bearer YOUR_KEY',
-    send_head: 'Authorization: Bearer YOUR_KEY',
+    api_key: 'sk-your-key',
+    send_url: 'https://your-chatroom-api.com/send',
+    connect_headers: {
+      'Authorization': 'Bearer YOUR_KEY',
+      'Content-Type': 'application/json'
+    },
+    send_headers: {
+      'Authorization': 'Bearer YOUR_KEY'
+    },
     model: 'gpt-4o'
   },
   extend_tool_list: [],

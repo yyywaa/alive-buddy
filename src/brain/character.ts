@@ -1,11 +1,16 @@
 import { CharacterConfig, UnifiedMessage, ImpulseResponse } from '../api/types.js';
+import { ReActEngine } from './react.js';
+import { ToolRegistry } from './tools/index.js';
 
 export class Character {
   public config: CharacterConfig;
+  public react: ReActEngine;
+  public toolRegistry: ToolRegistry;
   public runtime_state: {
     mood: number;
     energy: number;
     boredom: number;
+    energy_consumption_rate: number;
     last_interaction_at: number;
     is_active: boolean;
     memory_context: string;
@@ -14,11 +19,14 @@ export class Character {
   constructor(config: CharacterConfig, saved_state?: Partial<Character['runtime_state']>) {
     console.log(`[DEBUG] Initializing Character: ${config.name} (${config.id})`);
     this.config = config;
+    this.react = new ReActEngine(this.config);
+    this.toolRegistry = new ToolRegistry();
     
     this.runtime_state = {
       mood: config.initial_state.mood ?? 0,
       energy: config.initial_state.energy ?? 100,
       boredom: config.initial_state.boredom ?? 0,
+      energy_consumption_rate: config.initial_state.energy_consumption_rate ?? 2,
       last_interaction_at: Date.now(),
       is_active: false,
       memory_context: '',
@@ -48,7 +56,7 @@ export class Character {
     this.runtime_state.boredom = 0; // 收到消息，无聊度归零
     
     console.log(`[DEBUG] [${this.config.name}] Starting reAct loop...`);
-    // TODO: 实现 reAct 循环逻辑
+    await this.react.run(this, message);
   }
 
   /**

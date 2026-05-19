@@ -59,6 +59,7 @@ export interface CharacterConfig {
     mood?: number;
     energy?: number;
     boredom?: number;
+    energy_consumption_rate?: number; // 每一轮 reAct 消耗的精力，默认 2
   };
 
   // 接口配置
@@ -66,9 +67,8 @@ export interface CharacterConfig {
     base_url: string;
     api_key: string;      // LLM 专用 Key
     send_url: string;     // 客户端发送消息的 URL
-    connect_head: string; // 客户端连接 Header
-    send_head: string;    // 客户端发送 Header
-    headers?: Record<string, string>;
+    connect_headers: Record<string, string>; // 客户端连接 Headers
+    send_headers: Record<string, string>;    // 客户端发送 Headers
     model: string;
   };
 

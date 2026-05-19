@@ -1,6 +1,6 @@
 import { Character } from './character.js';
-import { LLMCall, StreamDelta } from './llm.js';
-import { UnifiedMessage, Tool } from '../api/types.js';
+import { LLMCall } from './llm.js';
+import { UnifiedMessage, CharacterConfig } from '../api/types.js';
 import OpenAI from 'openai';
 import { Stream } from 'openai/streaming';
 
@@ -11,7 +11,7 @@ export type ReActLogEntry = {
 };
 
 export class ReActEngine {
-  private character: Character;
+  private config: CharacterConfig;
   private llm: LLMCall;
   private abortController: AbortController | null = null;
   private currentTask: Promise<void> | null = null;
@@ -20,15 +20,15 @@ export class ReActEngine {
   // 日志回调函数
   public onLog?: (entry: ReActLogEntry) => void;
 
-  constructor(character: Character) {
-    this.character = character;
-    this.llm = new LLMCall(character.config);
+  constructor(config: CharacterConfig) {
+    this.config = config;
+    this.llm = new LLMCall(config);
   }
 
   private emitLog(type: ReActLogEntry['type'], content: string) {
     const entry: ReActLogEntry = { type, content, timestamp: Date.now() };
-    console.log(`[RE-ACT LOG][${type.toUpperCase()}] ${content}`); // 依然保留控制台输出
-    this.onLog?.(entry); // 同时触发回调给 UI/WebSocket
+    console.log(`[RE-ACT LOG][${type.toUpperCase()}] ${content}`);
+    this.onLog?.(entry);
   }
 
   /**
@@ -43,12 +43,10 @@ export class ReActEngine {
 
   /**
    * 启动 reAct 循环
-   * 使用 Promise 链式机制代替轮询，实现事件驱动的进程锁
    */
-  public async run(message: UnifiedMessage): Promise<void> {
-    // 1. 如果当前正在运行，执行 kill 并等待上一个任务任务结束
+  public async run(character: Character, message: UnifiedMessage): Promise<void> {
     if (this.currentTask) {
-      console.log(`[DEBUG] [ReActEngine] Interrupting existing task for ${this.character.config.name}`);
+      console.log(`[DEBUG] [ReActEngine] Interrupting existing task for ${character.config.name}`);
       this.kill();
       try {
         await this.currentTask;
@@ -57,8 +55,7 @@ export class ReActEngine {
       }
     }
 
-    // 2. 创建新任务并记录到进程锁中
-    this.currentTask = this.execute(message);
+    this.currentTask = this.execute(character, message);
     
     try {
       await this.currentTask;
@@ -70,18 +67,19 @@ export class ReActEngine {
   /**
    * 实际执行逻辑
    */
-  private async execute(message: UnifiedMessage): Promise<void> {
+  private async execute(character: Character, message: UnifiedMessage): Promise<void> {
     this.abortController = new AbortController();
-    console.log(`[DEBUG] [ReActEngine] Executing loop for ${this.character.config.name}`);
+    console.log(`[DEBUG] [ReActEngine] Executing loop for ${character.config.name}`);
 
     try {
-      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = this.prepareContext(message);
-      await this.stepRecursive(messages, 0);
+      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = this.prepareContext(character, message);
+      await this.stepRecursive(character, messages, 0);
     } catch (err: unknown) {
       const error = err as Error;
       if (error.name === 'AbortError') {
-        console.log(`[DEBUG] [ReActEngine] Task for ${this.character.config.name} was aborted.`);
+        console.log(`[DEBUG] [ReActEngine] Task for ${character.config.name} was aborted.`);
       } else {
+        this.emitLog('error', `Task failed: ${error.message}`);
         console.error(`[DEBUG] [ReActEngine] Task error:`, error);
         throw error;
       }
@@ -92,6 +90,7 @@ export class ReActEngine {
    * 递归执行 reAct 步骤
    */
   private async stepRecursive(
+    character: Character,
     messages: OpenAI.Chat.ChatCompletionMessageParam[], 
     stepCount: number
   ): Promise<void> {
@@ -100,14 +99,19 @@ export class ReActEngine {
       return;
     }
 
-    // 检查中断信号
     if (this.abortController?.signal.aborted) {
       throw new Error('AbortError');
     }
 
+    // 每一轮循环消耗精力
+    character.runtime_state.energy -= character.runtime_state.energy_consumption_rate;
+
+    // 获取当前 Character 注册的所有工具定义
+    const toolDefinitions = character.toolRegistry.getDefinitions();
+
     const response = await this.llm.call(
       messages, 
-      this.character.config.extend_tool_list, 
+      toolDefinitions, 
       this.abortController?.signal ?? undefined
     );
 
@@ -121,9 +125,9 @@ export class ReActEngine {
 
       for await (const delta of streamGenerator) {
         lastAccumulated = delta.accumulated;
-        // 产出增量
-        if (delta.content) {
-          this.emitLog('thought', delta.content);
+        if (delta.delta && typeof delta.delta === 'object' && 'content' in delta.delta) {
+          const content = (delta.delta as { content?: string }).content;
+          if (content) this.emitLog('thought', content);
         }
       }
       
@@ -139,21 +143,37 @@ export class ReActEngine {
     if (finalAssistantMsg) {
       messages.push(finalAssistantMsg);
       if (finalAssistantMsg.tool_calls && finalAssistantMsg.tool_calls.length > 0) {
-        await this.handleToolCalls(finalAssistantMsg.tool_calls, messages, stepCount);
+        await this.handleToolCalls(character, finalAssistantMsg.tool_calls, messages, stepCount);
       }
     }
   }
 
   private async handleToolCalls(
+    character: Character,
     toolCalls: OpenAI.Chat.ChatCompletionMessageToolCall[],
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
     stepCount: number
   ): Promise<void> {
     for (const toolCall of toolCalls) {
-      this.emitLog('action', `Calling tool: ${toolCall.function.name} with args: ${toolCall.function.arguments}`);
+      const toolName = toolCall.function.name;
+      const toolArgs = toolCall.function.arguments;
+
+      this.emitLog('action', `Executing ${toolName}...`);
       
-      // TODO: 实现工具分发与执行
-      const observation = `Observation from ${toolCall.function.name}`;
+      const tool = character.toolRegistry.get(toolName);
+      let observation: string;
+
+      if (tool) {
+        try {
+          const parsedArgs = JSON.parse(toolArgs) as Record<string, unknown>;
+          observation = await tool.execute(parsedArgs, character);
+        } catch (err: unknown) {
+          observation = `Error executing tool ${toolName}: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      } else {
+        observation = `Error: Tool ${toolName} not found in registry.`;
+      }
+
       this.emitLog('observation', observation);
       
       messages.push({
@@ -163,14 +183,25 @@ export class ReActEngine {
       });
     }
 
-    await this.stepRecursive(messages, stepCount + 1);
+    // 只要有工具调用发生，就继续下一轮迭代（除非被 kill）
+    await this.stepRecursive(character, messages, stepCount + 1);
   }
 
-  private prepareContext(message: UnifiedMessage): OpenAI.Chat.ChatCompletionMessageParam[] {
-    const statusInfo = `[Current Status: Mood=${this.character.runtime_state.mood}, Energy=${this.character.runtime_state.energy}]`;
+  private prepareContext(character: Character, message: UnifiedMessage): OpenAI.Chat.ChatCompletionMessageParam[] {
+    const statusInfo = `[Current Status: Mood=${character.runtime_state.mood}, Energy=${character.runtime_state.energy}, Boredom=${character.runtime_state.boredom}]`;
+    const memoryInfo = character.runtime_state.memory_context ? `[Internal Thought: ${character.runtime_state.memory_context}]` : '';
+    
     return [
-      { role: 'system', content: `${this.character.config.system_prompt_template}\n${statusInfo}` },
-      { role: 'user', content: JSON.stringify(message.payload.content) }
+      { 
+        role: 'system', 
+        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}` 
+      },
+      { 
+        role: 'user', 
+        content: Array.isArray(message.payload.content) 
+          ? JSON.stringify(message.payload.content) 
+          : message.payload.content 
+      }
     ];
   }
 
