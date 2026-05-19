@@ -105,9 +105,6 @@ export class ReActEngine {
       throw new Error('AbortError');
     }
 
-    // 状态消耗
-    this.character.runtime_state.energy -= 2;
-
     const response = await this.llm.call(
       messages, 
       this.character.config.extend_tool_list, 
