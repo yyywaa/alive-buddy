@@ -202,12 +202,28 @@ alive-buddy/
 │   ├── memory/          # TS: 记忆沉淀逻辑、ChromaDB 接入、SQLite 交互
 │   ├── ml/              # Python: 决策树模型、训练脚本、蒸馏生成器
 │   └── skills/          # 技巧库：预定义的 Python/JS 技能片段
-├── docs/                # 文档
-├── data/                # 本地持久化数据（SQLite, ChromaDB 索引）
-├── docker/              # Dockerfile 与 配置文件
-├── package.json         # Node.js 依赖
-└── requirements.txt     # Python 依赖
-```
+## 待办事项与路线图 (Roadmap)
+
+### 1. 决策引擎 (The "Proactive" Heart) - **优先级：高**
+*   [ ] 实现 `src/ml` 下的 Python 侧边栏推理服务。
+*   [ ] 编写 `RandomForestRegressor` 训练与自动化蒸馏脚本。
+*   [ ] 实现 **State Engine**：能量自然恢复与无聊度随时间演化的物理公式。
+
+### 2. 记忆中枢 (The "Long-term" Memory) - **优先级：高**
+*   [ ] 对接 SQLite：实现 `runtime_state` 与 L1 对话历史的持久化。
+*   [ ] 对接 ChromaDB：实现基于 RAG 的 L3 长期印象检索。
+*   [ ] 实现异步总结机制：定期将 L1 旧消息压缩为 L2 事件梗概。
+
+### 3. 技能沙箱 (The "Extendable" Skills) - **优先级：中**
+*   [ ] 开发 `src/skills` 的动态加载器，支持热更新技巧。
+*   [ ] 构建安全沙箱环境，用于执行外部 Python/JS 脚本。
+
+### 4. 客户端适配器与穿透 - **优先级：中**
+*   [ ] 在 `SendMessageTool` 中集成 `cloudscraper`，增强网络穿透力。
+*   [ ] 完善 WebSocket 日志流，确保 `ReActLogEntry` 实时推送到 UI。
+
+### 5. 进化循环 - **优先级：低**
+*   [ ] 实现 "Yes/No/Ignore" 用户反馈系统，支持模型个性化微调。
 
 
 
