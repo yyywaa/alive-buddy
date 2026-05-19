@@ -79,18 +79,29 @@
    e.g. `user:这是一只小猫 [image]:a cute black cat.`
    对于 reAct 循环中的连续动作（多次调用 `send`），采用**流式异步推送**，使得事件之间解耦，保证响应灵敏。
 
-2. **接口化设计**：允许用户通过 websocket 协议接入不同聊天室，并确保接口有强大的自由度和整洁度：
+### 接口定义
+*   **双向通信**：基于 WebSocket 协议，允许用户接入不同聊天室。
+*   **统一消息格式 (UnifiedMessage)**：
+    ```json
+    {
+      "msg_id": "client-uuid-789012",
+      "user_id": "user-888",
+      "session_id": "room-101",
+      "timestamp": 1716104995000,
+      "payload": {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "你看这张图里有什么？" },
+          { "type": "image_url", "image_url": { "url": "https://..." } }
+        ]
+      }
+    }
+    ```
+    *payload 遵循 OpenAI 多模态规范。*
 
-   必选参数：
-   `connect_head`:string  `base_url`:string  `send_url`:string  `send_head`:string
-   `character_prompt`:string
-
-   可选参数：
-   `extend_tool_list`:list[Tool]   `extend_skills_list`:list[Skill]
-   `llm_setting`:`LLM_setting`
-   ......
-
-   两个 head 可以再设计一个合并的版本，利用函数重载让两个接口同时运转，更多设置同理。
+*   **配置参数**：
+    *   必选：`connect_head`, `base_url`, `send_url`, `character_prompt` 等。
+    *   可选：`extend_tool_list`, `llm_setting` 等。
 
 3. **日志系统**：实时返回 reAct 思考日志供前端调试，同时具备自动清理机制防止内存溢出。
 
@@ -100,6 +111,74 @@
 
 *   **动态加载**：LLM 可通过 `get_skill` 工具检索并加载特定技能。支持动态加载预定义的脚本或用户主动上传的技巧片段。
 *   **安全与异步**：所有执行均在隔离沙箱环境中运行。耗时任务采用异步模式，避免阻塞 reAct 主循环。
+
+## API 接口与 Character 类
+
+本项目作为一个库暴露给用户，其核心是 `Character` 类。该类负责管理智能体的生命周期、状态演化与记忆检索。
+
+### Character 类结构
+
+```typescript
+class Character {
+  // 静态配置：包含身份设定、初始化参数与连接信息
+  config: CharacterConfig;
+  
+  // 运行状态：随时间演化的动态数据，支持序列化持久化
+  runtime_state: {
+    mood: number;
+    energy: number;
+    boredom: number;
+    last_interaction_at: number;
+    is_active: boolean;
+    memory_context: string;
+  };
+
+  /**
+   * @param config 基础配置与初始状态
+   * @param saved_state (可选) 上次持久化的运行状态。若提供，则覆盖初始化状态。
+   */
+  constructor(config: CharacterConfig, saved_state?: Partial<Character['runtime_state']>);
+
+  /**
+   * 核心脉搏：处理状态自然演化，并调用决策树判定是否主动触发消息
+   * 建议由用户通过定时器（如每分钟一次）调用
+   */
+  async pulse(): Promise<ImpulseResponse | null>;
+
+  /**
+   * 被动响应：当接收到用户消息时触发
+   * @param message 遵循 UnifiedMessage 格式
+   */
+  async onMessage(message: UnifiedMessage): Promise<void>;
+
+  /**
+   * 状态导出：将当前的 runtime_state 导出，方便用户存入 SQLite 或其他持久化介质
+   */
+  dumpState(): Partial<Character['runtime_state']>;
+}
+```
+
+### 核心设计原则
+1.  **初始化与状态分离**：`initial_state` 定义了智能体的“出厂设定”，而 `runtime_state` 记录了它在运行过程中的“性格演化”。
+2.  **RAG 化 Lorebook**：不再采用简单的关键词硬匹配，而是将 Lorebook 内容向量化，通过 RAG (Retrieval-Augmented Generation) 机制，根据当前对话语义动态检索并注入上下文。
+3.  **主动权与实时性**：通过 `pulse()` 方法，智能体获得了“主观时间感”，能够根据无聊度或精力值自发产生回复冲动。
+
+### 统一消息格式 (UnifiedMessage)
+```json
+{
+  "msg_id": "uuid",
+  "user_id": "user-id",
+  "session_id": "session-id",
+  "timestamp": 1716104995000,
+  "payload": {
+    "role": "user",
+    "content": [
+      { "type": "text", "text": "内容" },
+      { "type": "image_url", "image_url": { "url": "..." } }
+    ]
+  }
+}
+```
 
 ## 技术栈 (Technology Stack)
 

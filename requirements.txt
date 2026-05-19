@@ -1,5 +1,6 @@
 scikit-learn
-pandas
 numpy
-cloudscraper
-chromadb
+fastapi
+uvicorn
+pandas
+python-dotenv
