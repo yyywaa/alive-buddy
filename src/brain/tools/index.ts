@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { BaseTool } from './base.js';
 import { SendMessageTool } from './send_message.js';
 import { InternalMonologueTool } from './internal_monologue.js';
+import { SetMoodTool } from './set_mood.js';
 
 /**
  * 工具注册表类：管理所有可用的工具实例
@@ -14,6 +15,7 @@ export class ToolRegistry {
     // 默认注册内置核心工具
     this.register(new SendMessageTool());
     this.register(new InternalMonologueTool());
+    this.register(new SetMoodTool());
   }
 
   /**
@@ -43,3 +45,4 @@ export class ToolRegistry {
 export * from './base.js';
 export * from './send_message.js';
 export * from './internal_monologue.js';
+export * from './set_mood.js';
