@@ -93,6 +93,13 @@ chroma run --path ./data/chroma --port 8000
 在实例化 `AliveBuddyClient` 时，你需要传入以下配置项：
 
 - **`config`**: 核心的角色配置文件 `CharacterConfig`。
+  - `id`: 角色的唯一标识符。
+  - `name`: 角色名称（如 "Endra"）。
+  - `bio`: 角色简介（核心人设背景）。
+  - `system_prompt_template`: 大模型的 System Prompt 模板，支持注入变量如 `{{name}}`、`{{mood}}`。
+  - `initial_state`: 初始心理状态，包括 `energy` (精力)、`mood` (心情)、`boredom` (无聊度) 等。
+  - `connection`: 包含 LLM 调用的 `api_key`、`base_url`、`model` 等信息。在 YOLO 模式下，还要填写真实回调的 `send_url`。
+  - `debug`: 设为 `true` 时，通过 debug 流输出底层的 ReAct 思考过程。
 - **`services`**: 服务自动拉起策略。
   - `api`: 设为 `true` 时，自动在后台拉起 Node 主服务 (Fastify)。
   - `ml`: 设为 `true` 时，自动在后台拉起 Python 决策树服务。
@@ -101,37 +108,75 @@ chroma run --path ./data/chroma --port 8000
   - `true` (默认): 开启内置 Webhook。SDK 会自动劫持 agent 的回复，随后你可以通过 `client.on('message')` 轻松获取原始文本。此时，你需要自行编写将消息转发到真实 IM 平台（如 Discord/微信）的逻辑。
   - `false`: 开启 YOLO 模式。SDK 不做任何拦截，完全信任并调用你在 `config.connection.send_url` 中填写的地址进行消息外发。
 
-#### 代码示例
+#### 完整实战：用 SDK 搭建聊天室机器人 Endra
+
+以下是一个完整的例子，展示如何用我们的框架快速搭建一个名为 **Endra** 的智能体（本项目的前身），并将其接入到你的真实聊天室中。
 
 ```typescript
 import { AliveBuddyClient } from 'alive-buddy';
 
-const client = new AliveBuddyClient({
-  config: myCharacterConfig, 
-  services: {
-    api: true,     
-    ml: true,      
-    chroma: false  
+// 1. 定义 Endra 的角色配置
+const endraConfig = {
+  id: 'endra-001',
+  name: 'Endra',
+  bio: '一个有些傲娇、喜欢吐槽但内心温暖的二次元少女。',
+  system_prompt_template: '你是 {{name}}，目前心情值 {{mood}}，精力值 {{energy}}。请符合你的傲娇人设进行回复。',
+  initial_state: {
+    mood: 60,
+    energy: 100,
+    boredom: 0
   },
-  interceptMessage: true 
+  connection: {
+    base_url: 'https://api.openai.com/v1', // 兼容 OpenAI 格式的地址
+    api_key: 'sk-xxxxxxxx',
+    model: 'gpt-4o',
+    // 开启 SDK 拦截模式下，这里随便填，因为 SDK 会在内部偷偷接管它
+    send_url: 'http://localhost/dummy', 
+    connect_headers: {},
+    send_headers: {}
+  },
+  debug: true // 开启后可以看到 Endra 在后台真实的心理活动
+};
+
+// 2. 实例化客户端
+const endraClient = new AliveBuddyClient({
+  config: endraConfig,
+  services: {
+    api: true,    // 必须：启动 Node 核心大脑
+    ml: true,     // 必须：启动 Python 模块（用于产生主动搭话的冲动）
+    chroma: false // 可选：如果没有配置向量数据库则填 false
+  },
+  interceptMessage: true // 开启拦截
 });
 
-// 监听 Agent 的直接回复（当 interceptMessage 为 true 时才会触发）
-client.on('message', (content) => {
-  console.log('🤖 收到 Agent 回复:', content);
-  // 例如：myDiscordBot.sendMessage(channelId, content);
+// 3. 编写消息分发逻辑（把 Endra 的回复推送到真实的聊天室）
+endraClient.on('message', (content) => {
+  console.log('🌸 Endra 正在聊天室发言:', content);
+  // 在这里编写你发送到 QQ群 / Discord频道的真实网络逻辑
+  // myChatRoomClient.sendToChannel("general", content);
 });
 
-// 监听机器人的内部思考过程 (前提是 config.debug = true)
-client.on('debug', (log) => {
-  console.log('🧠 思考流:', log.content);
+// 监听并打印 Endra 的心理活动
+endraClient.on('debug', (log) => {
+  if (log.type === 'thought') {
+    console.log('💭 Endra 心想:', log.content);
+  }
 });
 
-// 一键启动，拉起所有依赖进程并完成 WebSocket 握手
-await client.start();
+// 4. 启动所有服务，并模拟用户交互
+async function main() {
+  await endraClient.start();
+  console.log('✅ Endra 已成功接入聊天室！');
 
-// 向智能体发送文本消息
-client.sendMessage('你好！');
+  // 模拟用户在聊天室对 Endra 说话
+  setTimeout(() => {
+    console.log('🙋‍♂️ 某群友说: 嘿，你在干嘛？');
+    // 把聊天室捕获到的消息塞给智能体
+    endraClient.sendMessage('嘿，你在干嘛？');
+  }, 2000);
+}
+
+main();
 ```
 
 #### 关于 YOLO 模式 (`interceptMessage: false`)
