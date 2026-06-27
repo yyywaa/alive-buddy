@@ -10,6 +10,7 @@ export interface UnifiedMessage {
       text?: string;
       image_url?: { url: string };
       other_url?: { url: string };
+      summary?: string; // 用于存储多模态内容的文本概括
     }>;
   };
 }

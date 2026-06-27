@@ -3,6 +3,8 @@ import { LLMCall } from './llm.js';
 import { UnifiedMessage, CharacterConfig } from '../api/types.js';
 import OpenAI from 'openai';
 import { Stream } from 'openai/streaming';
+import { MemoryManager } from '../memory/MemoryManager.js';
+import { queryImpressions } from '../memory/chroma.js';
 
 export type ReActLogEntry = {
   type: 'thought' | 'action' | 'observation' | 'error' | 'status';
@@ -72,8 +74,8 @@ export class ReActEngine {
     console.log(`[DEBUG] [ReActEngine] Executing loop for ${character.config.name}`);
 
     try {
-      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = this.prepareContext(character, message);
-      await this.stepRecursive(character, messages, 0);
+      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = await this.prepareContext(character, message);
+      await this.stepRecursive(character, messages, 0, message);
     } catch (err: unknown) {
       const error = err as Error;
       if (error.name === 'AbortError') {
@@ -92,7 +94,8 @@ export class ReActEngine {
   private async stepRecursive(
     character: Character,
     messages: OpenAI.Chat.ChatCompletionMessageParam[], 
-    stepCount: number
+    stepCount: number,
+    contextMessage: UnifiedMessage
   ): Promise<void> {
     if (stepCount >= this.maxSteps) {
       console.warn(`[DEBUG] [ReActEngine] Max steps reached.`);
@@ -143,7 +146,7 @@ export class ReActEngine {
     if (finalAssistantMsg) {
       messages.push(finalAssistantMsg);
       if (finalAssistantMsg.tool_calls && finalAssistantMsg.tool_calls.length > 0) {
-        await this.handleToolCalls(character, finalAssistantMsg.tool_calls, messages, stepCount);
+        await this.handleToolCalls(character, finalAssistantMsg.tool_calls, messages, stepCount, contextMessage);
       }
     }
   }
@@ -152,7 +155,8 @@ export class ReActEngine {
     character: Character,
     toolCalls: OpenAI.Chat.ChatCompletionMessageToolCall[],
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
-    stepCount: number
+    stepCount: number,
+    contextMessage: UnifiedMessage
   ): Promise<void> {
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
@@ -166,7 +170,7 @@ export class ReActEngine {
       if (tool) {
         try {
           const parsedArgs = JSON.parse(toolArgs) as Record<string, unknown>;
-          observation = await tool.execute(parsedArgs, character);
+          observation = await tool.execute(parsedArgs, character, contextMessage);
         } catch (err: unknown) {
           observation = `Error executing tool ${toolName}: ${err instanceof Error ? err.message : String(err)}`;
         }
@@ -184,24 +188,39 @@ export class ReActEngine {
     }
 
     // 只要有工具调用发生，就继续下一轮迭代（除非被 kill）
-    await this.stepRecursive(character, messages, stepCount + 1);
+    await this.stepRecursive(character, messages, stepCount + 1, contextMessage);
   }
 
-  private prepareContext(character: Character, message: UnifiedMessage): OpenAI.Chat.ChatCompletionMessageParam[] {
+  private async prepareContext(character: Character, message: UnifiedMessage): Promise<OpenAI.Chat.ChatCompletionMessageParam[]> {
     const statusInfo = `[Current Status: Mood=${character.runtime_state.mood}, Energy=${character.runtime_state.energy}, Boredom=${character.runtime_state.boredom}]`;
     const memoryInfo = character.runtime_state.memory_context ? `[Internal Thought: ${character.runtime_state.memory_context}]` : '';
+    
+    // 提取当前用户的文本输入作为向量检索的 Query
+    const queryStr = Array.isArray(message.payload.content)
+      ? message.payload.content.map(c => c.type === 'text' ? c.text : '').join(' ')
+      : message.payload.content;
+      
+    // 异步检索相关长期印象 (L3)
+    let loreContext = '';
+    try {
+      const impressions = await queryImpressions(message.session_id, queryStr);
+      if (impressions.length > 0) {
+        loreContext = `\n[长期印象 (Long-term Memory)]\n- ${impressions.join('\n- ')}`;
+      }
+    } catch (e) {
+      // 容错处理：若 Chroma 未启动不应阻塞核心链路
+      console.warn(`[DEBUG] [ReActEngine] ChromaDB query failed, skipping L3 memory injection.`);
+    }
+    
+    // 动态提取对话上下文，由于 onMessage 已经执行过 addMessage，这里提取出的自动包含最新用户的发言。
+    const historicalContext = MemoryManager.getContext(message.session_id) as OpenAI.Chat.ChatCompletionMessageParam[];
     
     return [
       { 
         role: 'system', 
-        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}` 
+        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}${loreContext}` 
       },
-      { 
-        role: 'user', 
-        content: Array.isArray(message.payload.content) 
-          ? JSON.stringify(message.payload.content) 
-          : message.payload.content 
-      }
+      ...historicalContext
     ];
   }
 

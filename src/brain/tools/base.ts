@@ -14,6 +14,7 @@ export abstract class BaseTool {
    */
   public abstract execute(
     args: Record<string, unknown>, 
-    character: Character
+    character: Character,
+    contextMessage?: import('../../api/types.js').UnifiedMessage
   ): Promise<string>;
 }

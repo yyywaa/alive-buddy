@@ -26,9 +26,10 @@ export class LLMCall {
   public async call(
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
     tools?: Tool[],
-    signal?: AbortSignal // 增加中断信号支持
+    signal?: AbortSignal,
+    overrideStream?: boolean
   ): Promise<OpenAI.Chat.ChatCompletion | Stream<OpenAI.Chat.ChatCompletionChunk>> {
-    const isStream = this.config.llm_setting?.stream ?? true;
+    const isStream = overrideStream !== undefined ? overrideStream : (this.config.llm_setting?.stream ?? true);
     
     console.log(`[DEBUG] [LLMCall] Calling ${this.config.connection.model} (stream=${isStream})`);
 

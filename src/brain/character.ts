@@ -1,6 +1,8 @@
 import { CharacterConfig, UnifiedMessage, ImpulseResponse } from '../api/types.js';
 import { ReActEngine } from './react.js';
 import { ToolRegistry } from './tools/index.js';
+import { MemoryManager } from '../memory/MemoryManager.js';
+import { Message as DomainMessage } from '../memory/Message.js';
 
 export class Character {
   public config: CharacterConfig;
@@ -54,6 +56,9 @@ export class Character {
     console.log(`[DEBUG] [${this.config.name}] Received message:`, JSON.stringify(message, null, 2));
     this.runtime_state.last_interaction_at = Date.now();
     this.runtime_state.boredom = 0; // 收到消息，无聊度归零
+    
+    // 持久化当前消息到 L1 感知层
+    MemoryManager.addMessage(new DomainMessage(message));
     
     console.log(`[DEBUG] [${this.config.name}] Starting reAct loop...`);
     await this.react.run(this, message);
