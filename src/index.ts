@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Character } from './brain/character.js';
 import { CharacterConfig } from './api/types.js';
 

@@ -3,6 +3,7 @@ import { ReActEngine } from './react.js';
 import { ToolRegistry } from './tools/index.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { Message as DomainMessage } from '../memory/Message.js';
+import { defaultProactiveEngine } from './proactive.js';
 
 export class Character {
   public config: CharacterConfig;
@@ -16,6 +17,8 @@ export class Character {
     last_interaction_at: number;
     is_active: boolean;
     memory_context: string;
+    last_active_session_id?: string;
+    last_pulse_at?: number;
   };
 
   constructor(config: CharacterConfig, saved_state?: Partial<Character['runtime_state']>) {
@@ -42,11 +45,59 @@ export class Character {
    */
   public async pulse(): Promise<ImpulseResponse | null> {
     console.log(`[DEBUG] [${this.config.name}] Pulse check triggered.`);
-    
-    // TODO: 实现状态演化逻辑 (State Engine)
-    // TODO: 调用决策树判定 (ML Sidecar)
-    
-    return null;
+
+    const sessionId = this.runtime_state.last_active_session_id;
+    if (!sessionId) {
+      console.log(`[DEBUG] [${this.config.name}] No active session, skipping proactive pulse.`);
+      return { action: 'none', payload: { reason: 'no_active_session' } };
+    }
+
+    // 调用 ML sidecar 进行 proactive 判定
+    const decision = await defaultProactiveEngine.decide(this.runtime_state);
+    console.log(`[DEBUG] [${this.config.name}] Proactive decision:`, decision);
+
+    if (!decision.shouldAct) {
+      return {
+        action: 'none',
+        payload: {
+          reason: decision.reason,
+          features: decision.features,
+          probability: decision.probability,
+        },
+      };
+    }
+
+    // 更新上次主动脉冲时间，避免过于频繁
+    this.runtime_state.last_pulse_at = Date.now();
+
+    // 构造一个轻量的“自我触发”消息，用于在记忆中定位会话
+    const triggerMessage: UnifiedMessage = {
+      msg_id: `proactive-${Date.now()}`,
+      user_id: this.config.id,
+      session_id: sessionId,
+      timestamp: Date.now(),
+      payload: {
+        role: 'system',
+        content: [
+          {
+            type: 'text',
+            text: '（系统提示：你感到一阵想要主动联系对方的冲动，请根据当前状态与记忆，决定是否发送一条自然、温暖的消息。）',
+          },
+        ],
+      },
+    };
+
+    // 触发 reAct 循环，让角色自主决定具体说什么
+    await this.react.run(this, triggerMessage);
+
+    return {
+      action: 'send',
+      payload: {
+        reason: decision.reason,
+        features: decision.features,
+        probability: decision.probability,
+      },
+    };
   }
 
   /**
@@ -55,6 +106,7 @@ export class Character {
   public async onMessage(message: UnifiedMessage): Promise<void> {
     console.log(`[DEBUG] [${this.config.name}] Received message:`, JSON.stringify(message, null, 2));
     this.runtime_state.last_interaction_at = Date.now();
+    this.runtime_state.last_active_session_id = message.session_id;
     this.runtime_state.boredom = 0; // 收到消息，无聊度归零
     
     // 持久化当前消息到 L1 感知层

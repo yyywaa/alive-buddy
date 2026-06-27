@@ -28,7 +28,7 @@ fastify.register(async (fastify) => {
   fastify.get('/v1/chat', { websocket: true }, (connection, req) => {
     console.log('[DEBUG] WebSocket connection established.');
 
-    connection.socket.on('message', async (message) => {
+    connection.socket.on('message', async (message: Buffer) => {
       try {
         const data = JSON.parse(message.toString());
         const { session_id, ...msgData } = data;

@@ -1,6 +1,6 @@
 import { Character } from './character.js';
 import { LLMCall } from './llm.js';
-import { UnifiedMessage, CharacterConfig } from '../api/types.js';
+import { UnifiedMessage, CharacterConfig, Tool } from '../api/types.js';
 import OpenAI from 'openai';
 import { Stream } from 'openai/streaming';
 import { MemoryManager } from '../memory/MemoryManager.js';
@@ -110,7 +110,7 @@ export class ReActEngine {
     character.runtime_state.energy -= character.runtime_state.energy_consumption_rate;
 
     // 获取当前 Character 注册的所有工具定义
-    const toolDefinitions = character.toolRegistry.getDefinitions();
+    const toolDefinitions = character.toolRegistry.getDefinitions() as Tool[];
 
     const response = await this.llm.call(
       messages, 
@@ -139,7 +139,10 @@ export class ReActEngine {
       const completion = response as OpenAI.Chat.ChatCompletion;
       finalAssistantMsg = completion.choices[0].message;
       if (finalAssistantMsg.content) {
-        this.emitLog('thought', finalAssistantMsg.content);
+        const contentText = typeof finalAssistantMsg.content === 'string'
+          ? finalAssistantMsg.content
+          : finalAssistantMsg.content.map(c => (c as { text?: string }).text ?? '').join('');
+        this.emitLog('thought', contentText);
       }
     }
 
