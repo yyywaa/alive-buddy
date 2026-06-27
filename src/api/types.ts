@@ -78,6 +78,11 @@ export interface CharacterConfig {
   extend_tool_list?: Tool[];
   extend_skills_list?: Skill[];
   llm_setting?: LLMSetting;
+  /**
+   * 是否开启 reAct 调试日志输出。
+   * 开启后，前端可通过 /v1/session/:id/debug WebSocket 实时查看角色思考过程。
+   */
+  debug?: boolean;
 }
 
 export interface ImpulseResponse {

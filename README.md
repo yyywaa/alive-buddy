@@ -87,6 +87,30 @@ npm run dev
 }
 ```
 
+##  Debug 模式
+
+角色的真实回复只会通过 `send_message` 工具推送到 `send_url`，以模拟真人发送行为。若需要观察 reAct 内部思考过程，可开启 debug 模式：
+
+1. 创建 session 时在 `CharacterConfig` 中设置 `debug: true`
+2. 连接独立的 debug WebSocket：
+```text
+ws://localhost:3000/v1/session/{session_id}/debug
+```
+
+开启后，该 session 的 reAct 日志（thought / action / observation / error）会实时推送到此通道，格式如下：
+```json
+{
+  "type": "debug_log",
+  "entry": {
+    "type": "thought",
+    "content": "我现在有点无聊，也许可以发消息...",
+    "timestamp": 1716104995000
+  }
+}
+```
+
+> 注意：`send_message` 仍是唯一消息出口；debug 日志仅用于开发调试，不会发送给用户。
+
 ##  项目结构
 
 请参考 [docs/PLAN.md](docs/PLAN.md) 获取详细的模块说明与开发计划。

@@ -3,12 +3,22 @@ import websocket from '@fastify/websocket';
 import { v4 as uuidv4 } from 'uuid';
 import { Character } from '../brain/character.js';
 import { CharacterConfig, UnifiedMessage } from './types.js';
+import { ReActLogEntry } from '../brain/react.js';
 
 const fastify = Fastify({ logger: true });
 fastify.register(websocket);
 
 // 内存中暂时存储 session 与 character 的映射
 const sessions = new Map<string, Character>();
+
+// debug WebSocket 连接管理：session_id -> SocketConnection Set
+type DebugSocket = {
+  socket: {
+    send: (data: string) => void;
+    close: () => void;
+  };
+};
+const debugSockets = new Map<string, Set<DebugSocket>>();
 
 /**
  * 轻量校验 WebSocket 消息是否符合 UnifiedMessage 最小必要结构
@@ -25,6 +35,50 @@ function isValidUnifiedMessage(data: unknown): data is UnifiedMessage {
   if (payload.role !== 'user' && payload.role !== 'assistant' && payload.role !== 'system') return false;
   if (!Array.isArray(payload.content)) return false;
   return true;
+}
+
+/**
+ * 向指定 session 的所有 debug socket 广播日志
+ */
+function broadcastDebugLog(sessionId: string, entry: ReActLogEntry) {
+  const sockets = debugSockets.get(sessionId);
+  if (!sockets || sockets.size === 0) return;
+
+  const payload = JSON.stringify({ type: 'debug_log', entry });
+  for (const conn of sockets) {
+    try {
+      conn.socket.send(payload);
+    } catch (err) {
+      // 发送失败时忽略，避免单个坏连接阻塞广播
+      console.warn(`[DEBUG] Failed to send debug log to session ${sessionId}:`, err);
+    }
+  }
+}
+
+/**
+ * 为 Character 注册 debug 日志广播回调
+ * 同一个 session 的多个 debug socket 会共享同一个回调
+ */
+function attachDebugLogger(sessionId: string, character: Character) {
+  character.react.onLog = (entry: ReActLogEntry) => {
+    broadcastDebugLog(sessionId, entry);
+  };
+}
+
+/**
+ * 清理某个 session 的 debug 连接；若全部断开，则取消日志回调
+ */
+function detachDebugSocket(sessionId: string, conn: DebugSocket, character?: Character) {
+  const sockets = debugSockets.get(sessionId);
+  if (sockets) {
+    sockets.delete(conn);
+    if (sockets.size === 0) {
+      debugSockets.delete(sessionId);
+      if (character) {
+        character.react.onLog = undefined;
+      }
+    }
+  }
 }
 
 fastify.register(async (fastify) => {
@@ -86,7 +140,48 @@ fastify.register(async (fastify) => {
     });
   });
 
-  // 3. 获取状态
+  // 3. Debug 日志 WebSocket 接口
+  fastify.get('/v1/session/:id/debug', { websocket: true }, (connection, req) => {
+    const { id } = req.params as { id: string };
+    console.log(`[DEBUG] Debug WebSocket connection established for session: ${id}`);
+
+    const character = sessions.get(id);
+    if (!character) {
+      connection.socket.send(JSON.stringify({ error: 'Session not found' }));
+      connection.socket.close();
+      return;
+    }
+
+    if (!character.config.debug) {
+      connection.socket.send(JSON.stringify({
+        type: 'debug_status',
+        enabled: false,
+        message: 'Debug mode is disabled for this character. Set CharacterConfig.debug = true to enable reAct logs.'
+      }));
+      connection.socket.close();
+      return;
+    }
+
+    const conn: DebugSocket = { socket: connection.socket };
+    if (!debugSockets.has(id)) {
+      debugSockets.set(id, new Set());
+      attachDebugLogger(id, character);
+    }
+    debugSockets.get(id)!.add(conn);
+
+    connection.socket.send(JSON.stringify({
+      type: 'debug_status',
+      enabled: true,
+      message: 'Debug mode enabled. ReAct logs will be streamed here.'
+    }));
+
+    connection.socket.on('close', () => {
+      console.log(`[DEBUG] Debug WebSocket connection closed for session: ${id}`);
+      detachDebugSocket(id, conn, character);
+    });
+  });
+
+  // 4. 获取状态
   fastify.get('/v1/session/:id/status', async (request, reply) => {
     const { id } = request.params as { id: string };
     const character = sessions.get(id);
