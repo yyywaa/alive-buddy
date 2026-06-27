@@ -88,34 +88,38 @@ chroma run --path ./data/chroma --port 8000
 ### 1. Node.js SDK 模式 (推荐)
 如果你在 Node.js 环境下开发（例如开发微信/Discord 机器人），推荐直接使用 `AliveBuddyClient` SDK。它能在内部自动架设 Webhook 拦截消息，并自动拉起所有必需的底层进程，让你彻底告别繁琐的网络通信。
 
-#### 核心用法与参数说明
+#### 核心配置参数说明
+
+在实例化 `AliveBuddyClient` 时，你需要传入以下配置项：
+
+- **`config`**: 核心的角色配置文件 `CharacterConfig`。
+- **`services`**: 服务自动拉起策略。
+  - `api`: 设为 `true` 时，自动在后台拉起 Node 主服务 (Fastify)。
+  - `ml`: 设为 `true` 时，自动在后台拉起 Python 决策树服务。
+  - `chroma`: 设为 `true` 时，自动拉起 ChromaDB（不需要 L3 长时记忆可填 `false`）。
+- **`interceptMessage` (YOLO Mode 开关)**: 消息流接管模式。
+  - `true` (默认): 开启内置 Webhook。SDK 会自动劫持 agent 的回复，随后你可以通过 `client.on('message')` 轻松获取原始文本。此时，你需要自行编写将消息转发到真实 IM 平台（如 Discord/微信）的逻辑。
+  - `false`: 开启 YOLO 模式。SDK 不做任何拦截，完全信任并调用你在 `config.connection.send_url` 中填写的地址进行消息外发。
+
+#### 代码示例
 
 ```typescript
 import { AliveBuddyClient } from 'alive-buddy';
 
 const client = new AliveBuddyClient({
-  // 1. 核心角色配置
   config: myCharacterConfig, 
-  
-  // 2. 服务自动拉起策略
   services: {
-    api: true,     // 自动后台拉起 Node 主服务 (Fastify)
-    ml: true,      // 自动后台拉起 Python 决策树服务
-    chroma: false  // 是否拉起 ChromaDB (没有安装可填 false)
+    api: true,     
+    ml: true,      
+    chroma: false  
   },
-  
-  // 3. 消息流接管模式 (YOLO Mode 开关)
-  // true (默认): 开启内置 Webhook。SDK 自动劫持 agent 的回复，你可以通过 client.on('message') 拿到原始文本。
-  // false: 开启 YOLO 模式。SDK 不做拦截，完全信任并调用你在 config 中填写的 send_url 进行消息外发。
   interceptMessage: true 
 });
 
-// ---- 【普通模式】 (interceptMessage: true) ----
-// 此时 SDK 已全面接管消息流，你的程序需要自行决定将这段话发给谁、如何过滤
+// 监听 Agent 的直接回复（当 interceptMessage 为 true 时才会触发）
 client.on('message', (content) => {
   console.log('🤖 收到 Agent 回复:', content);
-  // 例如：调用真实的 IM 平台接口发送
-  // myDiscordBot.sendMessage(channelId, content);
+  // 例如：myDiscordBot.sendMessage(channelId, content);
 });
 
 // 监听机器人的内部思考过程 (前提是 config.debug = true)
@@ -123,10 +127,10 @@ client.on('debug', (log) => {
   console.log('🧠 思考流:', log.content);
 });
 
-// 一键启动，拉起所有进程并完成 WebSocket 握手
+// 一键启动，拉起所有依赖进程并完成 WebSocket 握手
 await client.start();
 
-// 直接发送文本消息
+// 向智能体发送文本消息
 client.sendMessage('你好！');
 ```
 
