@@ -55,18 +55,19 @@ export class Character {
 
     if (timeDeltaMinutes <= 0) return;
 
-    // 1. 无聊度：随着时间推移，无聊度逐渐上升 (最大 100)
-    this.runtime_state.boredom = Math.min(100, this.runtime_state.boredom + timeDeltaMinutes * 0.5);
+    // 采用指数逼近 (Exponential Decay/Approach) 算法，使得状态变化更符合真实生物曲线
+    
+    // 1. 无聊度 (Boredom) 逼近 100：刚被冷落时上升较快，随后放缓
+    const k_boredom = 0.05; // 约 14 分钟无聊度距离拉近一半
+    this.runtime_state.boredom = 100 - (100 - this.runtime_state.boredom) * Math.exp(-k_boredom * timeDeltaMinutes);
 
-    // 2. 精力值：随着时间推移逐渐恢复 (最大 100)
-    this.runtime_state.energy = Math.min(100, this.runtime_state.energy + timeDeltaMinutes * 1.0);
+    // 2. 精力 (Energy) 逼近 100：休息恢复曲线
+    const k_energy = 0.02; // 约 35 分钟恢复一半失去的精力
+    this.runtime_state.energy = 100 - (100 - this.runtime_state.energy) * Math.exp(-k_energy * timeDeltaMinutes);
 
-    // 3. 心情：缓慢回落到平静状态 (50)
-    if (this.runtime_state.mood > 50) {
-      this.runtime_state.mood = Math.max(50, this.runtime_state.mood - timeDeltaMinutes * 0.2);
-    } else if (this.runtime_state.mood < 50) {
-      this.runtime_state.mood = Math.min(50, this.runtime_state.mood + timeDeltaMinutes * 0.2);
-    }
+    // 3. 心情 (Mood) 回落到 50：无论多高兴或多生气，都会逐渐平复
+    const k_mood = 0.03; // 约 23 分钟情绪平复一半
+    this.runtime_state.mood = 50 + (this.runtime_state.mood - 50) * Math.exp(-k_mood * timeDeltaMinutes);
 
     this.runtime_state.last_state_update_at = now;
     console.log(`[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)}`);
