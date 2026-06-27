@@ -10,7 +10,7 @@ export class SetMoodTool extends BaseTool {
     type: 'function',
     function: {
       name: 'set_mood',
-      description: '设置你的心情值 (mood)。0 表示极度忧郁/难过，50 表示平静，100 表示极度狂喜。',
+      description: '设置你的心情值 (mood)。0 表示极度忧郁/难过，50 表示平静，100 表示极度狂喜。注：你的心情会随着时间推移自然趋向于 50，因此无需为了平复心情而反复调用此工具。',
       parameters: {
         type: 'object',
         properties: {
