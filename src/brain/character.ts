@@ -21,6 +21,7 @@ export class Character {
     memory_context: string;
     last_active_session_id?: string;
     last_pulse_at?: number;
+    last_state_update_at: number;
   };
 
   constructor(config: CharacterConfig, saved_state?: Partial<Character['runtime_state']>) {
@@ -31,11 +32,12 @@ export class Character {
     this.memoryManager = new MemoryManager(config.id);
     
     this.runtime_state = {
-      mood: config.initial_state.mood ?? 0,
+      mood: config.initial_state.mood ?? 50,
       energy: config.initial_state.energy ?? 100,
       boredom: config.initial_state.boredom ?? 0,
       energy_consumption_rate: config.initial_state.energy_consumption_rate ?? 2,
       last_interaction_at: Date.now(),
+      last_state_update_at: Date.now(),
       is_active: false,
       memory_context: '',
       ...saved_state
@@ -44,10 +46,40 @@ export class Character {
   }
 
   /**
+   * 状态自然演化更新函数
+   */
+  public updateState(): void {
+    const now = Date.now();
+    const timeDeltaMs = now - this.runtime_state.last_state_update_at;
+    const timeDeltaMinutes = timeDeltaMs / (1000 * 60);
+
+    if (timeDeltaMinutes <= 0) return;
+
+    // 1. 无聊度：随着时间推移，无聊度逐渐上升 (最大 100)
+    this.runtime_state.boredom = Math.min(100, this.runtime_state.boredom + timeDeltaMinutes * 0.5);
+
+    // 2. 精力值：随着时间推移逐渐恢复 (最大 100)
+    this.runtime_state.energy = Math.min(100, this.runtime_state.energy + timeDeltaMinutes * 1.0);
+
+    // 3. 心情：缓慢回落到平静状态 (50)
+    if (this.runtime_state.mood > 50) {
+      this.runtime_state.mood = Math.max(50, this.runtime_state.mood - timeDeltaMinutes * 0.2);
+    } else if (this.runtime_state.mood < 50) {
+      this.runtime_state.mood = Math.min(50, this.runtime_state.mood + timeDeltaMinutes * 0.2);
+    }
+
+    this.runtime_state.last_state_update_at = now;
+    console.log(`[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)}`);
+  }
+
+  /**
    * 核心脉搏：处理状态自然演化，并判定是否主动触发消息
    */
   public async pulse(): Promise<ImpulseResponse | null> {
     console.log(`[DEBUG] [${this.config.name}] Pulse check triggered.`);
+    
+    // 脉搏跳动时，先自然演化一下状态
+    this.updateState();
 
     const sessionId = this.runtime_state.last_active_session_id;
     if (!sessionId) {
@@ -108,9 +140,13 @@ export class Character {
    */
   public async onMessage(message: UnifiedMessage): Promise<void> {
     console.log(`[DEBUG] [${this.config.name}] Received message:`, JSON.stringify(message, null, 2));
+    
+    // 收到消息时，先进行自然演化，计算距离上次更新流失的状态
+    this.updateState();
+    
     this.runtime_state.last_interaction_at = Date.now();
     this.runtime_state.last_active_session_id = message.session_id;
-    this.runtime_state.boredom = 0; // 收到消息，无聊度归零
+    this.runtime_state.boredom = 0; // 交互发生，无聊度归零
     
     // 持久化当前消息到 L1 感知层
     this.memoryManager.addMessage(new DomainMessage(message));
