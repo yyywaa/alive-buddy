@@ -3,6 +3,7 @@ export interface UnifiedMessage {
   user_id: string;
   session_id: string;
   timestamp: number;
+  silent?: boolean; // 若为 true，仅将消息记入记忆作为上下文，不触发 LLM 回复
   payload: {
     role: 'user' | 'assistant' | 'system';
     content: Array<{

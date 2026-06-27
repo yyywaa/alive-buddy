@@ -144,7 +144,7 @@ export class AliveBuddyClient extends EventEmitter {
   /**
    * 发送消息给智能体
    */
-  public sendMessage(text: string) {
+  public sendMessage(text: string, silent: boolean = false) {
     if (!this.ws || !this.sessionId) throw new Error('Client not ready, call start() first');
     
     const unifiedMsg: UnifiedMessage = {
@@ -152,6 +152,7 @@ export class AliveBuddyClient extends EventEmitter {
       user_id: 'local-client-user',
       session_id: this.sessionId,
       timestamp: Date.now(),
+      silent,
       payload: {
         role: 'user',
         content: [{ type: 'text', text }]

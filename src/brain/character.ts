@@ -115,6 +115,11 @@ export class Character {
     // 持久化当前消息到 L1 感知层
     this.memoryManager.addMessage(new DomainMessage(message));
     
+    if (message.silent) {
+      console.log(`[DEBUG] [${this.config.name}] Silent message received, skipping reAct loop.`);
+      return;
+    }
+    
     console.log(`[DEBUG] [${this.config.name}] Starting reAct loop...`);
     await this.react.run(this, message);
   }
