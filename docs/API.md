@@ -45,7 +45,7 @@ alive-buddy 主服务基于 Fastify 提供了 HTTP 与 WebSocket 接口，用于
 ```
 
 ### 获取当前状态
-查询角色的实时演化状态（如精力、无聊度等）。
+查询角色的实时演化状态（心情、精力、无聊度等）。状态会随时间自然演化：精力恢复、无聊度上升、心情在没有特殊事件时向 50（平静）回落。
 
 - **URL**: `/v1/session/:id/status`
 - **Method**: `GET`
@@ -61,6 +61,12 @@ alive-buddy 主服务基于 Fastify 提供了 HTTP 与 WebSocket 接口，用于
     "memory_context": "..."
   }
   ```
+
+#### 状态自然演化规则
+每次 `updateState()` 被触发（如收到消息或 `pulse()` 时），会按以下规则更新：
+- **mood（心情）**：无特殊事件时向 `50` 缓慢回落；Agent 仍可通过 `set_mood` 工具主动改变心情。
+- **energy（精力）**：随时间线性恢复至 `100`；每轮 reAct 循环会消耗 `energy_consumption_rate`。
+- **boredom（无聊度）**：随时间线性上升至 `100`；收到用户消息时归零。
 
 ## 2. 交互接口
 

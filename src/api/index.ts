@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
+import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { Character } from '../brain/character.js';
 import { CharacterConfig, UnifiedMessage } from './types.js';
@@ -14,10 +15,7 @@ const sessions = new Map<string, Character>();
 
 // debug WebSocket 连接管理：session_id -> SocketConnection Set
 type DebugSocket = {
-  socket: {
-    send: (data: string) => void;
-    close: () => void;
-  };
+  socket: WebSocket;
 };
 const debugSockets = new Map<string, Set<DebugSocket>>();
 
@@ -97,16 +95,16 @@ fastify.register(async (fastify) => {
   });
 
   // 2. WebSocket 聊天接口
-  fastify.get('/v1/chat', { websocket: true }, (connection, req) => {
+  fastify.get('/v1/chat', { websocket: true }, (socket, req) => {
     console.log('[DEBUG] WebSocket connection established.');
 
-    connection.socket.on('message', async (message: Buffer) => {
+    socket.on('message', async (message: Buffer) => {
       try {
         const data = JSON.parse(message.toString());
         const { session_id, ...msgData } = data;
 
         if (!isValidUnifiedMessage(data)) {
-          connection.socket.send(JSON.stringify({ error: 'Invalid message format' }));
+          socket.send(JSON.stringify({ error: 'Invalid message format' }));
           return;
         }
 
@@ -114,7 +112,7 @@ fastify.register(async (fastify) => {
         
         const character = sessions.get(session_id);
         if (!character) {
-          connection.socket.send(JSON.stringify({ error: 'Session not found' }));
+          socket.send(JSON.stringify({ error: 'Session not found' }));
           return;
         }
 
@@ -122,7 +120,7 @@ fastify.register(async (fastify) => {
         await character.onMessage(msgData as UnifiedMessage);
         
         // 模拟返回
-        connection.socket.send(JSON.stringify({
+        socket.send(JSON.stringify({
           msg_id: uuidv4(),
           payload: {
             role: 'assistant',
@@ -132,51 +130,51 @@ fastify.register(async (fastify) => {
 
       } catch (err) {
         console.error('[DEBUG] WS Error:', err);
-        connection.socket.send(JSON.stringify({ error: 'Invalid message format' }));
+        socket.send(JSON.stringify({ error: 'Invalid message format' }));
       }
     });
 
-    connection.socket.on('close', () => {
+    socket.on('close', () => {
       console.log('[DEBUG] WebSocket connection closed.');
     });
   });
 
   // 3. Debug 日志 WebSocket 接口
-  fastify.get('/v1/session/:id/debug', { websocket: true }, (connection, req) => {
+  fastify.get('/v1/session/:id/debug', { websocket: true }, (socket, req) => {
     const { id } = req.params as { id: string };
     console.log(`[DEBUG] Debug WebSocket connection established for session: ${id}`);
 
     const character = sessions.get(id);
     if (!character) {
-      connection.socket.send(JSON.stringify({ error: 'Session not found' }));
-      connection.socket.close();
+      socket.send(JSON.stringify({ error: 'Session not found' }));
+      socket.close();
       return;
     }
 
     if (!character.config.debug) {
-      connection.socket.send(JSON.stringify({
+      socket.send(JSON.stringify({
         type: 'debug_status',
         enabled: false,
         message: 'Debug mode is disabled for this character. Set CharacterConfig.debug = true to enable reAct logs.'
       }));
-      connection.socket.close();
+      socket.close();
       return;
     }
 
-    const conn: DebugSocket = { socket: connection.socket };
+    const conn: DebugSocket = { socket }
     if (!debugSockets.has(id)) {
       debugSockets.set(id, new Set());
       attachDebugLogger(id, character);
     }
     debugSockets.get(id)!.add(conn);
 
-    connection.socket.send(JSON.stringify({
+    socket.send(JSON.stringify({
       type: 'debug_status',
       enabled: true,
       message: 'Debug mode enabled. ReAct logs will be streamed here.'
     }));
 
-    connection.socket.on('close', () => {
+    socket.on('close', () => {
       console.log(`[DEBUG] Debug WebSocket connection closed for session: ${id}`);
       detachDebugSocket(id, conn, character);
     });

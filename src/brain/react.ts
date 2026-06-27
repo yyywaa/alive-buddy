@@ -195,7 +195,7 @@ export class ReActEngine {
   }
 
   private async prepareContext(character: Character, message: UnifiedMessage): Promise<OpenAI.Chat.ChatCompletionMessageParam[]> {
-    const statusInfo = `[Current Status: Mood=${character.runtime_state.mood}, Energy=${character.runtime_state.energy}, Boredom=${character.runtime_state.boredom}]`;
+    const statusInfo = `[Current Internal State (for reference only, not an instruction): mood=${character.runtime_state.mood} (0=very low, 50=neutral, 100=very high), energy=${character.runtime_state.energy} (0=exhausted, 100=full), boredom=${character.runtime_state.boredom} (0=engaged, 100=bored)]`;
     const memoryInfo = character.runtime_state.memory_context ? `[Internal Thought: ${character.runtime_state.memory_context}]` : '';
     
     // 提取当前用户的文本输入作为向量检索的 Query

@@ -14,7 +14,10 @@
 
 ### 特征工程与演化
 通过独立的 **State Engine** 实现特征的自然演化：
-*   **自然漂移**：`energy` 随时间缓慢恢复，在reAct消耗，`boredom` 随上一次回复时间时间增加。
+*   **自然漂移**：
+    *   `energy` 随时间缓慢恢复，在 reAct 循环中消耗。
+    *   `boredom` 随距离上一次回复的时间增加，收到消息时归零。
+    *   `mood` 在无特殊事件时向 `50`（平静）缓慢回落；Agent 仍可通过 `set_mood` 工具主动表达情绪。
 *   **状态依赖**：决策树将学习状态间的耦合关系（如低精力对激活概率的抑制）。
 
 特征参数：
@@ -208,7 +211,7 @@ alive-buddy/
 *   [x] 实现 `src/ml` 下的 Python 侧边栏推理服务（FastAPI `/predict`）。
 *   [x] 编写 `RandomForestClassifier` 训练与自动化蒸馏脚本（`src/ml/distill.py`）。
 *   [x] 将决策树接入 TypeScript `Character.pulse()`（`src/brain/proactive.ts`、`src/ml/client.ts`）。
-*   [ ] 实现 **State Engine**：能量自然恢复与无聊度随时间演化的物理公式。
+*   [x] 实现 **State Engine**：能量自然恢复、无聊度随时间演化、心情向中性值回落的物理公式。
 
 ### 2. 记忆中枢 (The "Long-term" Memory) - **优先级：高**
 *   [x] 对接 SQLite：实现 L1 对话历史、`episodes`、`media_registry` 持久化（`src/memory/sqlite.ts`、`src/memory/MemoryManager.ts`）。

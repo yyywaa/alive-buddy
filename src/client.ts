@@ -2,7 +2,7 @@ import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import path from 'path';
-import Fastify from 'fastify';
+import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 import { CharacterConfig, UnifiedMessage } from './api/types.js';
 
@@ -93,7 +93,7 @@ export class AliveBuddyClient extends EventEmitter {
 
   private async setupWebhook() {
     this.webhookServer = Fastify();
-    this.webhookServer.post('/webhook', async (request, reply) => {
+    this.webhookServer.post('/webhook', async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body as { content: string };
       // 触发 message 事件，调用方可通过 client.on('message', ...) 拿到
       this.emit('message', body.content);

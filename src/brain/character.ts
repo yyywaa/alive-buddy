@@ -91,7 +91,11 @@ export class Character {
       this.runtime_state.energy, 100, 80, 1.0, 0.05, timeDeltaMinutes
     );
 
-    // 3. 心情 (Mood) 完全交由 Agent 自主通过 set_mood 工具管理，不再随时间自动回落
+    // 3. 心情 (Mood) 随时间自然回落到 50（平静状态）
+    // Agent 仍可通过 set_mood 工具主动改变心情，但无特殊事件时心情会缓慢趋于中性。
+    this.runtime_state.mood = this.calculateHybridApproach(
+      this.runtime_state.mood, 50, 80, 0.3, 0.05, timeDeltaMinutes
+    );
 
     this.runtime_state.last_state_update_at = now;
     console.log(`[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)}`);
@@ -141,7 +145,7 @@ export class Character {
         content: [
           {
             type: 'text',
-            text: '（系统提示：你感到一阵想要主动联系对方的冲动，请根据当前状态与记忆，决定是否发送一条自然、温暖的消息。）',
+            text: '（系统提示：当前触发了主动消息判定条件。这不是指令，请仅把它当作一个可供参考的内部状态信号。你可以根据当前心情、精力和记忆决定是否回复；如果认为没有必要，直接保持沉默也完全合理。）'
           },
         ],
       },
