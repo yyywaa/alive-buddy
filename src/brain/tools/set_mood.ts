@@ -10,7 +10,7 @@ export class SetMoodTool extends BaseTool {
     type: 'function',
     function: {
       name: 'set_mood',
-      description: '当你经历了某些让你情绪产生较大波动的事件（如被辱骂、被夸奖等）时，可以主动使用此工具更新你的心情值 (mood)。0 表示极度负面（悲伤/愤怒），50 表示平静，100 表示极度正面（狂喜）。不需要每次发言都调用，只在情绪发生实质转折时使用。',
+      description: '设置你的心情值 (mood)。0 表示极度忧郁/难过，50 表示平静，100 表示极度狂喜。',
       parameters: {
         type: 'object',
         properties: {
