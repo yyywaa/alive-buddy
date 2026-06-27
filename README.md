@@ -285,7 +285,7 @@ alive-buddy/
 
 ## 当前状态
 
-早期原型，核心链路可用，部分功能仍在开发中（State Engine 的自然演化、Skills、用户反馈微调）。详见 [docs/PLAN.md](docs/PLAN.md)。
+早期原型，核心链路可用，部分功能仍在开发中Skills、用户反馈微调）。详见 [docs/PLAN.md](docs/PLAN.md)。
 
 ---
 
