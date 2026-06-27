@@ -6,8 +6,9 @@ let collection: Collection | null = null;
 /**
  * 初始化 ChromaDB 连接与 Collection
  * 默认连接本地的 ChromaDB 服务 (通常为 http://localhost:8000)
+ * 可通过环境变量 CHROMA_URL 覆盖
  */
-export async function initChroma(url: string = "http://localhost:8000") {
+export async function initChroma(url: string = process.env.CHROMA_URL ?? "http://localhost:8000") {
   if (client) return;
 
   try {

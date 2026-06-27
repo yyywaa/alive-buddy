@@ -205,14 +205,16 @@ alive-buddy/
 ## 待办事项与路线图 (Roadmap)
 
 ### 1. 决策引擎 (The "Proactive" Heart) - **优先级：高**
-*   [ ] 实现 `src/ml` 下的 Python 侧边栏推理服务。
-*   [ ] 编写 `RandomForestRegressor` 训练与自动化蒸馏脚本。
+*   [x] 实现 `src/ml` 下的 Python 侧边栏推理服务（FastAPI `/predict`）。
+*   [x] 编写 `RandomForestClassifier` 训练与自动化蒸馏脚本（`src/ml/distill.py`）。
+*   [x] 将决策树接入 TypeScript `Character.pulse()`（`src/brain/proactive.ts`、`src/ml/client.ts`）。
 *   [ ] 实现 **State Engine**：能量自然恢复与无聊度随时间演化的物理公式。
 
 ### 2. 记忆中枢 (The "Long-term" Memory) - **优先级：高**
-*   [ ] 对接 SQLite：实现 `runtime_state` 与 L1 对话历史的持久化。
-*   [ ] 对接 ChromaDB：实现基于 RAG 的 L3 长期印象检索。
-*   [ ] 实现异步总结机制：定期将 L1 旧消息压缩为 L2 事件梗概。
+*   [x] 对接 SQLite：实现 L1 对话历史、`episodes`、`media_registry` 持久化（`src/memory/sqlite.ts`、`src/memory/MemoryManager.ts`）。
+*   [ ] 对接 SQLite：`runtime_state` 持久化（表已创建，尚未写入）。
+*   [x] 对接 ChromaDB：实现基于 RAG 的 L3 长期印象检索（`src/memory/chroma.ts`）。
+*   [x] 实现异步总结机制：将 L1 旧消息压缩为 L2 事件梗概，再提炼为 L3 印象（`MemoryManager.summarizeToEpisode`、`consolidateToSemantic`）。
 
 ### 3. 技能沙箱 (The "Extendable" Skills) - **优先级：中**
 *   [ ] 开发 `src/skills` 的动态加载器，支持热更新技巧。

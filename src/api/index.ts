@@ -10,6 +10,23 @@ fastify.register(websocket);
 // 内存中暂时存储 session 与 character 的映射
 const sessions = new Map<string, Character>();
 
+/**
+ * 轻量校验 WebSocket 消息是否符合 UnifiedMessage 最小必要结构
+ */
+function isValidUnifiedMessage(data: unknown): data is UnifiedMessage {
+  if (typeof data !== 'object' || data === null) return false;
+  const msg = data as Record<string, unknown>;
+  if (typeof msg.session_id !== 'string') return false;
+  if (typeof msg.user_id !== 'string') return false;
+  if (typeof msg.msg_id !== 'string') return false;
+  if (typeof msg.timestamp !== 'number') return false;
+  if (typeof msg.payload !== 'object' || msg.payload === null) return false;
+  const payload = msg.payload as Record<string, unknown>;
+  if (payload.role !== 'user' && payload.role !== 'assistant' && payload.role !== 'system') return false;
+  if (!Array.isArray(payload.content)) return false;
+  return true;
+}
+
 fastify.register(async (fastify) => {
   // 1. 初始化 Session
   fastify.post('/v1/session/init', async (request, reply) => {
@@ -32,6 +49,11 @@ fastify.register(async (fastify) => {
       try {
         const data = JSON.parse(message.toString());
         const { session_id, ...msgData } = data;
+
+        if (!isValidUnifiedMessage(data)) {
+          connection.socket.send(JSON.stringify({ error: 'Invalid message format' }));
+          return;
+        }
 
         console.log(`[DEBUG] WS Received message for session: ${session_id}`);
         

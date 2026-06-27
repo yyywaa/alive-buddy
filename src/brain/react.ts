@@ -106,8 +106,9 @@ export class ReActEngine {
       throw new Error('AbortError');
     }
 
-    // 每一轮循环消耗精力
+    // 每一轮循环消耗精力，并限制在模型接受的 [-100, 100] 范围内
     character.runtime_state.energy -= character.runtime_state.energy_consumption_rate;
+    character.runtime_state.energy = Math.max(-100, Math.min(100, character.runtime_state.energy));
 
     // 获取当前 Character 注册的所有工具定义
     const toolDefinitions = character.toolRegistry.getDefinitions() as Tool[];
