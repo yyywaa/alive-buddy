@@ -1,124 +1,136 @@
 # alive-buddy
 
-*alive-buddy* 是一个基于机器学习决策树与 reAct 循环的**自主行动智能体 (Autonomous Agent)** 框架。
+自主行动智能体框架，基于 ML 决策树（RandomForest）和 reAct 循环实现。区别于传统聊天机器人的地方在于，它有"主动说话"的驱动机制：靠一个决策树模型（而非写死的规则）来判断当前时间、状态下是否应该主动发消息。
 
-它不同于传统的静态聊天机器人，它拥有自己的“主观时间感”和“心理状态”，能够根据精力、无聊度等特征，自发地产生行动冲动。
+---
 
-##  核心特性
+## 工作原理
 
-- **ML 驱动的唤醒机制**：采用 `RandomForestClassifier` 替代传统的固定规则，模拟人类的社交欲望与生物节奏。
-- **ReAct 思考循环**：支持“内部独白”与“外部行动”分离，模拟真实人脑的决策过程。
-- **三层记忆架构**：结合 SQLite (L1/L2) 与 ChromaDB (L3 RAG)，实现长期运行不忘事的记忆力。
-- **实时性与中断**：内置物理级 Abort 机制，支持用户随时插话，智能体能立即中断思考并响应。
-- **双引擎架构**：TS 处理高并发 API 与逻辑调度，Python 支撑 ML 推理与蒸馏流水线。
+两条并行的驱动链路：
 
-##  架构概览
+**主动链路（Proactive）**：定时 `pulse()` → 特征提取 → ML sidecar 推理 → 超过阈值 → 进入 reAct 循环 → 自行决定说什么
 
-```text
-[用户/聊天室] <-> [WebSocket API] <-> [Character 引擎]
-                                          |
-                   -------------------------------------------
-                   |                      |                  |
-           [reAct 循环]            [决策树 (ML)]       [三层记忆]
-           (LLM 调用)              (Python Sidecar)    (SQLite/VectorDB)
-```
+**被动链路（Reactive）**：收到用户消息 → `onMessage()` → 进入 reAct 循环 → 决定是回复还是独白
 
-##  快速开始
+reAct 循环内部：LLM 生成 thought → 选择调用工具（`send_message` 或 `internal_monologue`）→ 获取 observation → 继续或终止，最多 10 步。
 
-### 1. 环境准备
-确保已安装 Node.js (v20+) 和 Python (3.10+)。
+---
 
-### 2. 安装依赖
+## 依赖服务
+
+项目运行需要三个进程同时在线：
+
+| 服务 | 默认端口 | 说明 |
+|------|---------|------|
+| TS 主服务 | `3000` | Fastify，处理 API 和 WebSocket |
+| ML Sidecar | `8001` | Python FastAPI，提供 `/predict` 推理接口 |
+| ChromaDB | `8000` | 向量数据库，存储 L3 长期印象，可选 |
+
+---
+
+## 快速开始
+
+**环境要求**：Node.js v20+，Python 3.10+
+
 ```bash
+# 安装依赖
 npm install
 pip install -r requirements.txt
 ```
 
-### 3. 配置环境变量
-复制或修改项目根目录的 `.env`，至少填写：
-```bash
+`.env` 最少填写：
+
+```env
 OPENAI_API_KEY="your-api-key"
-OPENAI_BASE_URL="https://api.openai.com/v1"   # 或使用其他兼容 OpenAI 的接口
+OPENAI_BASE_URL="https://api.openai.com/v1"   # 兼容 OpenAI 格式即可
 LLM_MODEL="gpt-4o"
 
-# ML Sidecar 默认端口 8001，避免与 ChromaDB 默认端口 8000 冲突
 ML_SIDECAR_URL="http://127.0.0.1:8001"
 CHROMA_URL="http://127.0.0.1:8000"
 ```
 
-### 4. 启动依赖服务
+**启动 ML Sidecar**（必须）：
 
-#### 启动 ChromaDB（向量数据库，用于 L3 长期印象）
-如果你本地已安装 ChromaDB，可以使用：
-```bash
-chroma run --path ./data/chroma --port 8000
-```
-或参考 [Chroma 官方文档](https://docs.trychroma.com/) 使用 Docker 启动。
-
-#### 启动 ML Sidecar（决策树推理服务）
 ```bash
 cd src/ml
 python app.py
-# 默认监听 127.0.0.1:8001
 ```
 
-### 5. 运行主服务
+**启动 ChromaDB**（可选，不启动则 L3 记忆失效）：
+
+```bash
+chroma run --path ./data/chroma --port 8000
+```
+
+**启动主服务**：
+
 ```bash
 npm run dev
 ```
 
-主服务启动后会监听 WebSocket 聊天接口，并定时执行 `Character.pulse()` 进行主动决策。
+---
 
-##  接口示例
+## 使用方式
 
-通过 WebSocket 连接到 `/v1/chat`，发送符合 `UnifiedMessage` 格式的 JSON：
-```json
-{
-  "msg_id": "client-uuid-789012",
-  "user_id": "user-888",
-  "session_id": "room-101",
-  "timestamp": 1716104995000,
-  "payload": {
-    "role": "user",
-    "content": [
-      { "type": "text", "text": "在干嘛？" }
-    ]
-  }
-}
-```
+主服务对外通过 HTTP/WebSocket 暴露接口。典型的接入流程：
 
-##  Debug 模式
+1. `POST /v1/session/init`，传入 `CharacterConfig`，获得 `session_id`
+2. 建立 WebSocket 连接到 `/v1/chat`，发送 `UnifiedMessage`
+3. 智能体的回复通过 `CharacterConfig.connection.send_url` 推出（即它会主动 POST 到你指定的地址）
+4. 如需调试，连接 `/v1/session/:id/debug`，实时查看 reAct 思考过程
 
-角色的真实回复只会通过 `send_message` 工具推送到 `send_url`，以模拟真人发送行为。若需要观察 reAct 内部思考过程，可开启 debug 模式：
-
-1. 创建 session 时在 `CharacterConfig` 中设置 `debug: true`
-2. 连接独立的 debug WebSocket：
-```text
-ws://localhost:3000/v1/session/{session_id}/debug
-```
-
-开启后，该 session 的 reAct 日志（thought / action / observation / error）会实时推送到此通道，格式如下：
-```json
-{
-  "type": "debug_log",
-  "entry": {
-    "type": "thought",
-    "content": "我现在有点无聊，也许可以发消息...",
-    "timestamp": 1716104995000
-  }
-}
-```
-
-> 注意：`send_message` 仍是唯一消息出口；debug 日志仅用于开发调试，不会发送给用户。
-
-##  项目结构
-
-请参考 [docs/PLAN.md](docs/PLAN.md) 获取详细的模块说明与开发计划。
-
-##  贡献与反馈
-
-本项目目前处于早期原型阶段，欢迎通过 Issues 提交你的点子。
+详见 [docs/API.md](docs/API.md)。
 
 ---
+
+## 项目结构
+
+```
+alive-buddy/
+├── src/
+│   ├── api/             # Fastify 路由、WebSocket、类型定义
+│   ├── brain/
+│   │   ├── character.ts # Character 类，生命周期管理
+│   │   ├── react.ts     # reAct 循环引擎
+│   │   ├── proactive.ts # 主动决策模块，特征构建与阈值判断
+│   │   ├── llm.ts       # LLM 调用封装
+│   │   └── tools/       # 内置工具：send_message, internal_monologue
+│   ├── memory/
+│   │   ├── MemoryManager.ts  # L1/L2/L3 记忆管理
+│   │   ├── sqlite.ts         # L1 感知层、L2 事件层（SQLite）
+│   │   └── chroma.ts         # L3 印象层（ChromaDB）
+│   └── ml/
+│       ├── app.py       # FastAPI sidecar 入口
+│       ├── model.py     # RandomForestClassifier 封装
+│       ├── distill.py   # LLM 驱动的数据蒸馏脚本
+│       └── client.ts    # TS 侧调用 sidecar 的客户端
+├── data/
+│   ├── training_data.csv    # 预置训练数据
+│   └── characters/          # 角色持久化数据（SQLite）
+└── docs/
+    ├── PLAN.md              # 设计文档
+    └── API.md               # 接口文档
+```
+
+---
+
+## 记忆架构
+
+三层结构，从热到冷：
+
+- **L1 感知层**：最近 N 条对话，SQLite 存储，直接注入上下文。超出容量后触发 L2 总结
+- **L2 事件层**：LLM 对过期对话生成的"剧情梗概"，SQLite 存储
+- **L3 印象层**：从 L2 提炼的绝对事实（"用户喜欢猫"），ChromaDB 存储，按语义检索后注入上下文
+
+多模态降级：上下文中最多保留最后 3 张图片，更早的图片会被替换为其文字描述。
+
+---
+
+## 当前状态
+
+早期原型，核心链路可用，部分功能仍在开发中（State Engine 的自然演化、Skills 沙箱、用户反馈微调）。详见 [docs/PLAN.md](docs/PLAN.md)。
+
+---
+
 **License**: MIT  
 **Author**: yyywaa (951899550@qq.com)
