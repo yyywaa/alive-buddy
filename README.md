@@ -220,7 +220,7 @@ main();
 当你一次性灌入大量历史记录，或只想把系统提示（如“玩家进入房间”）告诉智能体而不希望它搭茬时，你可以使用静默消息机制：
 - **在 SDK 中**：调用时传入第二个参数 `client.sendMessage(text, true)`。
 - **在跨语言底层 API 中**：向 `ws://.../v1/chat` 投递 `UnifiedMessage` JSON 时，附带 `"silent": true`。
-静默消息会被完美写入记忆上下文，但**绝对不会**触发底层 ReAct 引擎和 LLM 消耗。
+静默消息会被写入记忆上下文，但不会触发底层 ReAct 引擎和 LLM 消耗。
 
 #### 关于 YOLO 模式 (`interceptMessage: false`)
 如果你仅仅想用 `AliveBuddyClient` 作为一个简单的“进程编排器”来帮你拉起 ML 和 API 服务，而消息分发逻辑你已经搭建好了独立的外部服务端（例如用 Go 写的统一网关），你可以将 `interceptMessage` 设为 `false`。
