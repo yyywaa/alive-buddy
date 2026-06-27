@@ -149,13 +149,17 @@ const endraClient = new AliveBuddyClient({
   interceptMessage: true // 开启拦截模式
 });
 
-// 3. 编写消息分发逻辑（把 Endra 的回复推送到真实的聊天室或 MC 服务器）
+// 3. 接入真实的 Coffeeroom 聊天室
+import WebSocket from 'ws';
+
+let coffeeroomWs: WebSocket | null = null;
+
+// 把 Endra 的回复推送到真实的聊天室
 endraClient.on('message', (content) => {
   console.log('🐉 Endra 发出声音:', content);
-  
-  // 在这里接入你真实的聊天室 API 或 Minecraft Rcon 接口
-  // chatroom.broadcast(content);
-  // 或者 mcServer.executeCommand(`tellraw @a {"text":"[Endra] ${content}"}`);
+  if (coffeeroomWs && coffeeroomWs.readyState === WebSocket.OPEN) {
+    coffeeroomWs.send(content);
+  }
 });
 
 endraClient.on('debug', (log) => {
@@ -164,17 +168,35 @@ endraClient.on('debug', (log) => {
   }
 });
 
-// 4. 启动所有服务，并模拟玩家交互
+// 4. 启动所有服务，并建立聊天室长连接
 async function main() {
+  // 先拉起智能体大脑和各项后台服务
   await endraClient.start();
-  console.log('✅ Endra 已成功降临聊天室！');
+  console.log('✅ Endra 智能体大脑已上线，准备连接聊天室...');
 
-  // 模拟玩家在 MC 聊天室对 Endra 说话
-  setTimeout(() => {
-    console.log('🗡️ 玩家 Steve 说: 我要拔了你的龙鳞！');
-    // 把聊天室捕获到的消息投喂给智能体
-    endraClient.sendMessage('Steve: 我要拔了你的龙鳞！');
-  }, 2000);
+  // 连接真实的 Coffeeroom WebSocket (带上鉴权 Cookie)
+  coffeeroomWs = new WebSocket('wss://<your-coffeeroom-server>/ws/<room>', {
+    headers: { 'Cookie': 'your_session_cookie_here' }
+  });
+
+  coffeeroomWs.on('open', () => {
+    console.log('✅ 已成功降临 Coffeeroom 聊天室！');
+  });
+
+  coffeeroomWs.on('message', (data) => {
+    try {
+      const messages = JSON.parse(data.toString());
+      // Coffeeroom 下发的消息通常是 JSON 数组格式
+      for (const msg of messages) {
+        if (!msg.text || msg.sender_username === 'EnderDragon') continue;
+        
+        // 将群友的发言原封不动地投喂给智能体
+        endraClient.sendMessage(`${msg.sender_username}: ${msg.text}`);
+      }
+    } catch (e) {
+      console.error('解析消息失败', e);
+    }
+  });
 }
 
 main();
