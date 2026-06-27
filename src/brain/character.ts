@@ -3,12 +3,14 @@ import { ReActEngine } from './react.js';
 import { ToolRegistry } from './tools/index.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { Message as DomainMessage } from '../memory/Message.js';
+import { initSQLite } from '../memory/sqlite.js';
 import { defaultProactiveEngine } from './proactive.js';
 
 export class Character {
   public config: CharacterConfig;
   public react: ReActEngine;
   public toolRegistry: ToolRegistry;
+  public memoryManager: MemoryManager;
   public runtime_state: {
     mood: number;
     energy: number;
@@ -26,6 +28,7 @@ export class Character {
     this.config = config;
     this.react = new ReActEngine(this.config);
     this.toolRegistry = new ToolRegistry();
+    this.memoryManager = new MemoryManager(config.id);
     
     this.runtime_state = {
       mood: config.initial_state.mood ?? 0,
@@ -110,7 +113,7 @@ export class Character {
     this.runtime_state.boredom = 0; // 收到消息，无聊度归零
     
     // 持久化当前消息到 L1 感知层
-    MemoryManager.addMessage(new DomainMessage(message));
+    this.memoryManager.addMessage(new DomainMessage(message));
     
     console.log(`[DEBUG] [${this.config.name}] Starting reAct loop...`);
     await this.react.run(this, message);

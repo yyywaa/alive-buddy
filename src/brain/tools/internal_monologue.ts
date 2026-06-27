@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import { BaseTool } from './base.js';
 import { Character } from '../character.js';
-import { MemoryManager } from '../../memory/MemoryManager.js';
 import { Message as DomainMessage } from '../../memory/Message.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -41,7 +40,7 @@ export class InternalMonologueTool extends BaseTool {
     
     // 作为内部独白固化到 L1 记忆，以供下一轮 reAct 检索
     if (contextMessage) {
-      MemoryManager.addMessage(new DomainMessage({
+      character.memoryManager.addMessage(new DomainMessage({
         msg_id: uuidv4(),
         user_id: character.config.id,
         session_id: contextMessage.session_id,

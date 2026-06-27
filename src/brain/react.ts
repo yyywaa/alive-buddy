@@ -3,7 +3,6 @@ import { LLMCall } from './llm.js';
 import { UnifiedMessage, CharacterConfig, Tool } from '../api/types.js';
 import OpenAI from 'openai';
 import { Stream } from 'openai/streaming';
-import { MemoryManager } from '../memory/MemoryManager.js';
 import { queryImpressions } from '../memory/chroma.js';
 
 export type ReActLogEntry = {
@@ -207,7 +206,7 @@ export class ReActEngine {
     // 异步检索相关长期印象 (L3)
     let loreContext = '';
     try {
-      const impressions = await queryImpressions(message.session_id, queryStr);
+      const impressions = await queryImpressions(character.config.id, message.session_id, queryStr);
       if (impressions.length > 0) {
         loreContext = `\n[长期印象 (Long-term Memory)]\n- ${impressions.join('\n- ')}`;
       }
@@ -217,7 +216,7 @@ export class ReActEngine {
     }
     
     // 动态提取对话上下文，由于 onMessage 已经执行过 addMessage，这里提取出的自动包含最新用户的发言。
-    const historicalContext = MemoryManager.getContext(message.session_id) as OpenAI.Chat.ChatCompletionMessageParam[];
+    const historicalContext = character.memoryManager.getContext(message.session_id) as OpenAI.Chat.ChatCompletionMessageParam[];
     
     return [
       { 
