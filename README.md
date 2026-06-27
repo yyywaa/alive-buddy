@@ -88,35 +88,54 @@ chroma run --path ./data/chroma --port 8000
 ### 1. Node.js SDK 模式 (推荐)
 如果你在 Node.js 环境下开发（例如开发微信/Discord 机器人），推荐直接使用 `AliveBuddyClient` SDK。它能在内部自动架设 Webhook 拦截消息，并自动拉起所有必需的底层进程，让你彻底告别繁琐的网络通信。
 
+#### 核心用法与参数说明
+
 ```typescript
 import { AliveBuddyClient } from 'alive-buddy';
 
 const client = new AliveBuddyClient({
-  config: myCharacterConfig, // 基础配置，无需自己配置复杂的 send_url
+  // 1. 核心角色配置
+  config: myCharacterConfig, 
+  
+  // 2. 服务自动拉起策略
   services: {
-    api: true,     // 自动后台拉起 Node 主服务
+    api: true,     // 自动后台拉起 Node 主服务 (Fastify)
     ml: true,      // 自动后台拉起 Python 决策树服务
-    chroma: false  // 是否拉起 ChromaDB
-  }
+    chroma: false  // 是否拉起 ChromaDB (没有安装可填 false)
+  },
+  
+  // 3. 消息流接管模式 (YOLO Mode 开关)
+  // true (默认): 开启内置 Webhook。SDK 自动劫持 agent 的回复，你可以通过 client.on('message') 拿到原始文本。
+  // false: 开启 YOLO 模式。SDK 不做拦截，完全信任并调用你在 config 中填写的 send_url 进行消息外发。
+  interceptMessage: true 
 });
 
-// 极简的消息监听（无需自己搭 Webhook 服务器）
+// ---- 【普通模式】 (interceptMessage: true) ----
+// 此时 SDK 已全面接管消息流，你的程序需要自行决定将这段话发给谁、如何过滤
 client.on('message', (content) => {
   console.log('🤖 收到 Agent 回复:', content);
+  // 例如：调用真实的 IM 平台接口发送
+  // myDiscordBot.sendMessage(channelId, content);
 });
 
-// 监听机器人的内部思考过程
+// 监听机器人的内部思考过程 (前提是 config.debug = true)
 client.on('debug', (log) => {
-  console.log('🧠', log.content);
+  console.log('🧠 思考流:', log.content);
 });
 
-// 一键启动并完成网络握手
+// 一键启动，拉起所有进程并完成 WebSocket 握手
 await client.start();
 
 // 直接发送文本消息
 client.sendMessage('你好！');
 ```
-*(注：如果需要自行控制消息推流，只需在配置中传入 `interceptMessage: false` 即可开启 YOLO 模式)*
+
+#### 关于 YOLO 模式 (`interceptMessage: false`)
+如果你仅仅想用 `AliveBuddyClient` 作为一个简单的“进程编排器”来帮你拉起 ML 和 API 服务，而消息分发逻辑你已经搭建好了独立的外部服务端（例如用 Go 写的统一网关），你可以将 `interceptMessage` 设为 `false`。
+此时请注意：
+- SDK **不会**在内部拦截消息，`client.on('message')` 不会触发。
+- 你**必须**在传入的 `config.connection.send_url` 和 `send_headers` 中填写正确的外网或局域网真实回调地址。
+- 智能体会把底层直接暴露给你，完全不经过客户端的聊天室端信息过滤，直接向该地址发起真实的 HTTP POST 请求。
 
 ### 2. 跨语言 API 模式 (独立部署)
 如果你使用 Python、Go 等其他语言，或是将 `alive-buddy` 部署在独立服务器上，可以通过标准的 HTTP/WebSocket 接口交互：
