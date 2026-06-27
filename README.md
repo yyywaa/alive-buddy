@@ -85,12 +85,45 @@ chroma run --path ./data/chroma --port 8000
 
 ## 使用方式
 
-主服务对外通过 HTTP/WebSocket 暴露接口。典型的接入流程：
+### 1. Node.js SDK 模式 (推荐)
+如果你在 Node.js 环境下开发（例如开发微信/Discord 机器人），推荐直接使用 `AliveBuddyClient` SDK。它能在内部自动架设 Webhook 拦截消息，并自动拉起所有必需的底层进程，让你彻底告别繁琐的网络通信。
 
-1. `POST /v1/session/init`，传入 `CharacterConfig`，获得 `session_id`
-2. 建立 WebSocket 连接到 `/v1/chat`，发送 `UnifiedMessage`
-3. 智能体的回复通过 `CharacterConfig.connection.send_url` 推出（即它会主动 POST 到你指定的地址）
-4. 如需调试，连接 `/v1/session/:id/debug`，实时查看 reAct 思考过程
+```typescript
+import { AliveBuddyClient } from 'alive-buddy';
+
+const client = new AliveBuddyClient({
+  config: myCharacterConfig, // 基础配置，无需自己配置复杂的 send_url
+  services: {
+    api: true,     // 自动后台拉起 Node 主服务
+    ml: true,      // 自动后台拉起 Python 决策树服务
+    chroma: false  // 是否拉起 ChromaDB
+  }
+});
+
+// 极简的消息监听（无需自己搭 Webhook 服务器）
+client.on('message', (content) => {
+  console.log('🤖 收到 Agent 回复:', content);
+});
+
+// 监听机器人的内部思考过程
+client.on('debug', (log) => {
+  console.log('🧠', log.content);
+});
+
+// 一键启动并完成网络握手
+await client.start();
+
+// 直接发送文本消息
+client.sendMessage('你好！');
+```
+*(注：如果需要自行控制消息推流，只需在配置中传入 `interceptMessage: false` 即可开启 YOLO 模式)*
+
+### 2. 跨语言 API 模式 (独立部署)
+如果你使用 Python、Go 等其他语言，或是将 `alive-buddy` 部署在独立服务器上，可以通过标准的 HTTP/WebSocket 接口交互：
+
+1. **初始化会话**: `POST /v1/session/init`，传入 `CharacterConfig` 获得 `session_id`。
+2. **连接聊天流**: `ws://<host>:<port>/v1/chat`，投递消息。
+3. **接收主动回复**: 智能体会将决策后的结果，通过 POST 请求主动发送到你配置的 `send_url` Webhook。
 
 详见 [docs/API.md](docs/API.md)。
 
