@@ -110,69 +110,70 @@ chroma run --path ./data/chroma --port 8000
 
 #### 完整实战：用 SDK 搭建聊天室机器人 Endra
 
-以下是一个完整的例子，展示如何用我们的框架快速搭建一个名为 **Endra** 的智能体（本项目的前身），并将其接入到你的真实聊天室中。
+以下是一个完整的例子，展示如何用我们的框架重构并搭建一个名为 **Endra**（末影龙智能体，本项目的前身），并将其接入到真实的聊天室或 Minecraft 服务器中。
 
 ```typescript
 import { AliveBuddyClient } from 'alive-buddy';
 
-// 1. 定义 Endra 的角色配置
+// 1. 定义 Endra 的角色配置 (末影龙人设)
 const endraConfig = {
-  id: 'endra-001',
+  id: 'endra-dragon-001',
   name: 'Endra',
-  bio: '一个有些傲娇、喜欢吐槽但内心温暖的二次元少女。',
-  system_prompt_template: '你是 {{name}}，目前心情值 {{mood}}，精力值 {{energy}}。请符合你的傲娇人设进行回复。',
+  bio: '一只盘踞在末地、拥有人类心智的高傲末影龙。她潜伏在服务器聊天室中，偶尔会主动发出一声龙啸或者嘲讽玩家的讨论。',
+  system_prompt_template: '你是 {{name}}，一只高傲的末影龙。当前你的心情值是 {{mood}}，精力是 {{energy}}。在回复玩家时，请保持你作为巨龙的威严，动作描述请用星号括起来（例如 *Dragon roars*）。',
   initial_state: {
-    mood: 60,
+    mood: 50,
     energy: 100,
     boredom: 0
   },
   connection: {
-    base_url: 'https://api.openai.com/v1', // 兼容 OpenAI 格式的地址
+    base_url: 'https://api.openai.com/v1', 
     api_key: 'sk-xxxxxxxx',
     model: 'gpt-4o',
-    // 开启 SDK 拦截模式下，这里随便填，因为 SDK 会在内部偷偷接管它
+    // 在默认 SDK 模式下（内部接管消息），这里填任意占位符即可
     send_url: 'http://localhost/dummy', 
     connect_headers: {},
     send_headers: {}
   },
-  debug: true // 开启后可以看到 Endra 在后台真实的心理活动
+  debug: true // 开启后可以看到 Endra 在后台的真实心理活动（思考链）
 };
 
 // 2. 实例化客户端
 const endraClient = new AliveBuddyClient({
   config: endraConfig,
   services: {
-    api: true,    // 必须：启动 Node 核心大脑
-    ml: true,     // 必须：启动 Python 模块（用于产生主动搭话的冲动）
-    chroma: false // 可选：如果没有配置向量数据库则填 false
+    api: true,    // 启动核心大脑
+    ml: true,     // 启动 ML 决策模块（让龙产生主动咆哮的冲动）
+    chroma: true  // 启动 ChromaDB（让龙能长久记住哪个玩家伤害过她）
   },
-  interceptMessage: true // 开启拦截
+  interceptMessage: true // 开启拦截模式
 });
 
-// 3. 编写消息分发逻辑（把 Endra 的回复推送到真实的聊天室）
+// 3. 编写消息分发逻辑（把 Endra 的回复推送到真实的聊天室或 MC 服务器）
 endraClient.on('message', (content) => {
-  console.log('🌸 Endra 正在聊天室发言:', content);
-  // 在这里编写你发送到 QQ群 / Discord频道的真实网络逻辑
-  // myChatRoomClient.sendToChannel("general", content);
+  console.log('🐉 Endra 发出声音:', content);
+  
+  // 在这里接入你真实的聊天室 API 或 Minecraft Rcon 接口
+  // chatroom.broadcast(content);
+  // 或者 mcServer.executeCommand(`tellraw @a {"text":"[Endra] ${content}"}`);
 });
 
-// 监听并打印 Endra 的心理活动
 endraClient.on('debug', (log) => {
   if (log.type === 'thought') {
     console.log('💭 Endra 心想:', log.content);
   }
 });
 
-// 4. 启动所有服务，并模拟用户交互
+// 4. 启动所有服务，并模拟玩家交互
 async function main() {
   await endraClient.start();
-  console.log('✅ Endra 已成功接入聊天室！');
+  console.log('✅ Endra 已成功降临聊天室！');
 
-  // 模拟用户在聊天室对 Endra 说话
+  // 模拟玩家在 MC 聊天室对 Endra 说话
   setTimeout(() => {
-    console.log('🙋‍♂️ 某群友说: 嘿，你在干嘛？');
-    // 把聊天室捕获到的消息塞给智能体
-    endraClient.sendMessage('嘿，你在干嘛？');
+    console.log('🗡️ 玩家 Steve 说: 我要拔了你的龙鳞！');
+    // 把聊天室捕获到的消息投喂给智能体
+    endraClient.sendMessage('Steve: 我要拔了你的龙鳞！');
   }, 2000);
 }
 
