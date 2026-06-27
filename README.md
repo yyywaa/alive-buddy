@@ -30,42 +30,55 @@ reAct 循环内部：LLM 生成 thought → 选择调用工具（`send_message` 
 
 ## 快速开始
 
-**环境要求**：Node.js v20+，Python 3.10+
+本项目采用**双引擎架构**，运行完整功能需要同时开启多个终端并分别启动对应的服务。
+
+### 0. 一键安装环境 (推荐)
+
+项目内置了自动检查依赖、安装库与生成 `.env` 的脚本：
 
 ```bash
-# 安装依赖
-npm install
-pip install -r requirements.txt
+./install.sh
 ```
 
-`.env` 最少填写：
+*(如果你想手动安装，需执行 `npm install` 与 `pip install -r requirements.txt`，并手动配置 `.env`，参考下面说明)*
 
-```env
-OPENAI_API_KEY="your-api-key"
-OPENAI_BASE_URL="https://api.openai.com/v1"   # 兼容 OpenAI 格式即可
-LLM_MODEL="gpt-4o"
+> `.env` 核心配置说明：
+> ```env
+> OPENAI_API_KEY="your-api-key"
+> OPENAI_BASE_URL="https://api.openai.com/v1"   # 兼容 OpenAI 格式即可
+> LLM_MODEL="gpt-4o"
+> 
+> ML_SIDECAR_URL="http://127.0.0.1:8001"
+> CHROMA_URL="http://127.0.0.1:8000"
+> ```
 
-ML_SIDECAR_URL="http://127.0.0.1:8001"
-CHROMA_URL="http://127.0.0.1:8000"
-```
+### 1. 终端 A：启动 ML Sidecar (必须)
 
-**启动 ML Sidecar**（必须）：
+智能体的“主动思考”能力依赖此 Python 决策树服务。
 
 ```bash
 cd src/ml
 python app.py
 ```
 
-**启动 ChromaDB**（可选，不启动则 L3 记忆失效）：
+### 2. 终端 B：启动主服务 (必须)
+
+负责 WebSocket 通信、大模型调用与 SQLite 短期记忆管理。
+
+```bash
+# 开发模式启动
+npm run dev
+
+# 如果已全局安装 (npm install -g)，可直接使用快捷命令启动
+alive-buddy
+```
+
+### 3. 终端 C：启动 ChromaDB (可选)
+
+存储长期印象（L3 记忆）。如果不启动，主服务代码会降级处理并仅依赖 SQLite。
 
 ```bash
 chroma run --path ./data/chroma --port 8000
-```
-
-**启动主服务**：
-
-```bash
-npm run dev
 ```
 
 ---
