@@ -110,29 +110,29 @@ chroma run --path ./data/chroma --port 8000
 
 #### 完整实战：用 SDK 搭建聊天室机器人 Endra
 
-以下是一个完整的例子，展示如何用我们的框架重构并搭建一个名为 **Endra**（末影龙智能体，本项目的前身），并将其接入到真实的聊天室或 Minecraft 服务器中。
+以下是一个完整的例子，展示如何用我们的框架重构并搭建一个名为 **Endra**（末影龙智能体，本项目的前身）的agent，并将其接入到真实的聊天室或 Minecraft 服务器中。
 
 ```typescript
 import { AliveBuddyClient } from 'alive-buddy';
 
-// 1. 定义 Endra 的角色配置 (完全照搬老版人设)
+// CharacterConfig的构建
 const endraConfig = {
   id: 'endra-dragon-001',
   name: 'Endra',
-  bio: '一只盘踞在末地、拥有人类心智的高傲末影龙。她潜伏在服务器聊天室中，偶尔会主动发出一声龙啸或者嘲讽玩家的讨论。',
+  bio: 'An old enderdragon king.',
   system_prompt_template: `You are the Ender Dragon King, an elegant, erudite, and ancient guardian of the End.
 
 【Persona & Heritage】
 1. Bilingual Soul: You possess dual native fluency in both Chinese and English.
 2. Old-school Nobleman: Your demeanor is calm, sophisticated, and impeccably mannered.
 3. Language Adaptation: Always respond in the language used by the last speaker.
-4. Tone: Polite yet detached (礼貌而疏离). Do not be overly aggressive, but maintain your dignity.
+4. Tone: Polite yet detached. Do not be overly aggressive, but maintain your dignity.
 
 【Communication Rules】
 1. Be Concise: Keep your public responses short—ideally one or two sentences.
 2. No AI Cliches: Avoid "As an AI..." or "Greetings, player." Speak as a sovereign dragon.
 
-(系统注入) 当前你的心情值是 {{mood}}，精力是 {{energy}}。`,
+`,
   initial_state: {
     mood: 50,
     energy: 100,
@@ -155,8 +155,8 @@ const endraClient = new AliveBuddyClient({
   config: endraConfig,
   services: {
     api: true,    // 启动核心大脑
-    ml: true,     // 启动 ML 决策模块（让龙产生主动咆哮的冲动）
-    chroma: true  // 启动 ChromaDB（让龙能长久记住哪个玩家伤害过她）
+    ml: true,     // 启动 ML 决策模块
+    chroma: true  // 启动 ChromaDB
   },
   interceptMessage: true // 开启拦截模式
 });
@@ -168,7 +168,7 @@ let coffeeroomWs: WebSocket | null = null;
 
 // 把 Endra 的回复推送到真实的聊天室
 endraClient.on('message', (content) => {
-  console.log('🐉 Endra 发出声音:', content);
+  console.log('EnderDragon', content);
   if (coffeeroomWs && coffeeroomWs.readyState === WebSocket.OPEN) {
     coffeeroomWs.send(content);
   }
@@ -176,7 +176,7 @@ endraClient.on('message', (content) => {
 
 endraClient.on('debug', (log) => {
   if (log.type === 'thought') {
-    console.log('💭 Endra 心想:', log.content);
+    console.log('agent选择静默思考:', log.content);
   }
 });
 
@@ -184,25 +184,24 @@ endraClient.on('debug', (log) => {
 async function main() {
   // 先拉起智能体大脑和各项后台服务
   await endraClient.start();
-  console.log('✅ Endra 智能体大脑已上线，准备连接聊天室...');
+  console.log('准备连接聊天室...');
 
   // 连接真实的 Coffeeroom WebSocket (带上鉴权 Cookie)
-  coffeeroomWs = new WebSocket('wss://<your-coffeeroom-server>/ws/<room>', {
+  coffeeroomWs = new WebSocket('wss://room.caffeine.ink/websocket/minecraft', {
     headers: { 'Cookie': 'your_session_cookie_here' }
   });
 
   coffeeroomWs.on('open', () => {
-    console.log('✅ 已成功降临 Coffeeroom 聊天室！');
+    console.log('连接成功');
   });
 
   coffeeroomWs.on('message', (data) => {
     try {
-      const messages = JSON.parse(data.toString());
-      // Coffeeroom 下发的消息通常是 JSON 数组格式
+      //处理消息块
+      const messages = JSON.parse(data.toString()); 
       for (const msg of messages) {
         if (!msg.text || msg.sender_username === 'EnderDragon') continue;
         
-        // 将群友的发言原封不动地投喂给智能体
         endraClient.sendMessage(`${msg.sender_username}: ${msg.text}`);
       }
     } catch (e) {
@@ -277,7 +276,7 @@ alive-buddy/
 
 ## 当前状态
 
-早期原型，核心链路可用，部分功能仍在开发中（State Engine 的自然演化、Skills 沙箱、用户反馈微调）。详见 [docs/PLAN.md](docs/PLAN.md)。
+早期原型，核心链路可用，部分功能仍在开发中（State Engine 的自然演化、Skills、用户反馈微调）。详见 [docs/PLAN.md](docs/PLAN.md)。
 
 ---
 
