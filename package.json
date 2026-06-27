@@ -1,8 +1,11 @@
 {
   "name": "alive-buddy",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "An autonomous agent based on ML decision trees and reAct loops.",
   "main": "dist/index.js",
+  "bin": {
+    "alive-buddy": "./bin/alive-buddy.js"
+  },
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
