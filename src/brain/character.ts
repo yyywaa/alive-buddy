@@ -46,6 +46,30 @@ export class Character {
   }
 
   /**
+   * 混合逼近算法：在到达阈值前使用线性速率，接近边界时采用指数逼近。
+   */
+  private calculateHybridApproach(current: number, target: number, threshold: number, linearRate: number, k: number, timeDelta: number): number {
+    const isIncreasing = target > current;
+    const c = isIncreasing ? current : -current;
+    const t = isIncreasing ? target : -target;
+    const th = isIncreasing ? threshold : -threshold;
+
+    let res: number;
+    if (c < th) {
+      const timeToThreshold = (th - c) / linearRate;
+      if (timeDelta <= timeToThreshold) {
+        res = c + linearRate * timeDelta;
+      } else {
+        const remainingTime = timeDelta - timeToThreshold;
+        res = t - (t - th) * Math.exp(-k * remainingTime);
+      }
+    } else {
+      res = t - (t - c) * Math.exp(-k * timeDelta);
+    }
+    return isIncreasing ? res : -res;
+  }
+
+  /**
    * 状态自然演化更新函数
    */
   public updateState(): void {
@@ -55,19 +79,29 @@ export class Character {
 
     if (timeDeltaMinutes <= 0) return;
 
-    // 采用指数逼近 (Exponential Decay/Approach) 算法，使得状态变化更符合真实生物曲线
-    
-    // 1. 无聊度 (Boredom) 逼近 100：刚被冷落时上升较快，随后放缓
-    const k_boredom = 0.05; // 约 14 分钟无聊度距离拉近一半
-    this.runtime_state.boredom = 100 - (100 - this.runtime_state.boredom) * Math.exp(-k_boredom * timeDeltaMinutes);
+    // 1. 无聊度 (Boredom) 逼近 100
+    // 0-80 区间采用线性上升 (0.5/min)，>80 后采用指数逼近
+    this.runtime_state.boredom = this.calculateHybridApproach(
+      this.runtime_state.boredom, 100, 80, 0.5, 0.05, timeDeltaMinutes
+    );
 
-    // 2. 精力 (Energy) 逼近 100：休息恢复曲线
-    const k_energy = 0.02; // 约 35 分钟恢复一半失去的精力
-    this.runtime_state.energy = 100 - (100 - this.runtime_state.energy) * Math.exp(-k_energy * timeDeltaMinutes);
+    // 2. 精力 (Energy) 逼近 100
+    // 0-80 区间采用线性恢复 (1.0/min)，>80 后采用指数逼近
+    this.runtime_state.energy = this.calculateHybridApproach(
+      this.runtime_state.energy, 100, 80, 1.0, 0.05, timeDeltaMinutes
+    );
 
-    // 3. 心情 (Mood) 回落到 50：无论多高兴或多生气，都会逐渐平复
-    const k_mood = 0.03; // 约 23 分钟情绪平复一半
-    this.runtime_state.mood = 50 + (this.runtime_state.mood - 50) * Math.exp(-k_mood * timeDeltaMinutes);
+    // 3. 心情 (Mood) 回落到 50 (平静)
+    // 极值区间采用线性回落 (0.2/min)，距离 50 上下 10 点之内采用指数逼近
+    if (this.runtime_state.mood > 50) {
+      this.runtime_state.mood = this.calculateHybridApproach(
+        this.runtime_state.mood, 50, 60, 0.2, 0.05, timeDeltaMinutes
+      );
+    } else if (this.runtime_state.mood < 50) {
+      this.runtime_state.mood = this.calculateHybridApproach(
+        this.runtime_state.mood, 50, 40, 0.2, 0.05, timeDeltaMinutes
+      );
+    }
 
     this.runtime_state.last_state_update_at = now;
     console.log(`[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)}`);
