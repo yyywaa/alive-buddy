@@ -111,6 +111,41 @@ test('addMessage 重复投递同一 msg_id 幂等，不中断消息流', () => {
   assert.equal(context.length, 1);
 });
 
+test('runtime_state 保存与读取往返一致', () => {
+  const mm = makeManager();
+  const characterId = createdIds[createdIds.length - 1];
+
+  assert.equal(mm.loadRuntimeState(), null);
+
+  mm.saveRuntimeState({
+    mood: 66,
+    energy: 42,
+    boredom: 7,
+    last_interaction_at: 123,
+    is_active: true,
+    last_state_update_at: 456,
+    last_active_session_id: 'sess-x',
+  });
+
+  const loaded = mm.loadRuntimeState();
+  assert.equal(loaded?.mood, 66);
+  assert.equal(loaded?.energy, 42);
+  assert.equal(loaded?.boredom, 7);
+  assert.equal(loaded?.is_active, true);
+  assert.equal(loaded?.last_state_update_at, 456);
+  assert.equal(loaded?.last_active_session_id, 'sess-x');
+
+  // 覆盖写：第二次保存应整行替换而非新增
+  mm.saveRuntimeState({
+    mood: 10, energy: 20, boredom: 30,
+    last_interaction_at: 999, is_active: false,
+  });
+  const updated = mm.loadRuntimeState();
+  assert.equal(updated?.mood, 10);
+  assert.equal(updated?.is_active, false);
+  assert.equal(updated?.last_active_session_id, undefined);
+});
+
 test('Message.toOpenAIPayload 按 keepImage 决定图片保留或降级', () => {
   const msg = imageMsg('x', 'sess', '一只黑猫', 1000);
 

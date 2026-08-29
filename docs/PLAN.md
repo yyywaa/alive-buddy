@@ -215,9 +215,9 @@ alive-buddy/
 
 ### 2. 记忆中枢 (The "Long-term" Memory) - **优先级：高**
 *   [x] 对接 SQLite：实现 L1 对话历史、`episodes`、`media_registry` 持久化（`src/memory/sqlite.ts`、`src/memory/MemoryManager.ts`）。
-*   [ ] 对接 SQLite：`runtime_state` 持久化（表已创建，尚未写入）。
+*   [x] 对接 SQLite：`runtime_state` 持久化（随状态演化自动写入，重启后自动恢复）。
 *   [x] 对接 ChromaDB：实现基于 RAG 的 L3 长期印象检索（`src/memory/chroma.ts`）。
-*   [x] 实现异步总结机制：将 L1 旧消息压缩为 L2 事件梗概，再提炼为 L3 印象（`MemoryManager.summarizeToEpisode`、`consolidateToSemantic`）。
+*   [x] 实现异步总结机制：将 L1 旧消息压缩为 L2 事件梗概，再提炼为 L3 印象（`MemoryManager.summarizeToEpisode`、`consolidateToSemantic`），并已接入三类触发器——L1 容量水位、对话空闲超时、睡眠时段固化（`Character.onMessage`、`Character.pulse`）。
 
 ### 3. 技能沙箱 (The "Extendable" Skills) - **优先级：中**
 *   [ ] 开发 `src/skills` 的动态加载器，支持热更新技巧。

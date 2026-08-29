@@ -80,6 +80,17 @@ export interface CharacterConfig {
   extend_skills_list?: Skill[];
   llm_setting?: LLMSetting;
   /**
+   * 记忆总结触发配置（均可选）
+   */
+  memory?: {
+    /** L1 感知层容量（条数），超出后最旧消息异步总结为 L2 事件，默认 20 */
+    l1_capacity?: number;
+    /** 对话空闲多少分钟判定段落结束并触发总结（L1→L2），默认 120 */
+    idle_summarize_minutes?: number;
+    /** 睡眠期固化（L2→L3）的最小间隔毫秒数，默认 6 小时 */
+    consolidate_interval_ms?: number;
+  };
+  /**
    * 是否开启 reAct 调试日志输出。
    * 开启后，前端可通过 /v1/session/:id/debug WebSocket 实时查看角色思考过程。
    */

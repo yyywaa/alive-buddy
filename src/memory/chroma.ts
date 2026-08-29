@@ -28,6 +28,13 @@ export async function initChroma(url: string = process.env.CHROMA_URL ?? "http:/
 }
 
 /**
+ * ChromaDB 是否已初始化完成（L3 印象层是否可用）
+ */
+export function isChromaReady(): boolean {
+  return collection !== null;
+}
+
+/**
  * 添加一条长期印象到向量数据库
  *
  * @param characterId Character 身份标识，用于隔离不同角色的记忆

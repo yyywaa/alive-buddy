@@ -4,7 +4,8 @@ import { ToolRegistry } from './tools/index.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { Message as DomainMessage } from '../memory/Message.js';
 import { initSQLite } from '../memory/sqlite.js';
-import { defaultProactiveEngine } from './proactive.js';
+import { defaultProactiveEngine, classifyHour } from './proactive.js';
+import { isChromaReady } from '../memory/chroma.js';
 
 export class Character {
   public config: CharacterConfig;
@@ -21,6 +22,7 @@ export class Character {
     memory_context: string;
     last_active_session_id?: string;
     last_pulse_at?: number;
+    last_consolidated_at?: number;
     last_state_update_at: number;
   };
 
@@ -40,6 +42,8 @@ export class Character {
       last_state_update_at: Date.now(),
       is_active: false,
       memory_context: '',
+      // 优先级：initial_state < SQLite 持久化状态 < 显式传入的 saved_state
+      ...(this.memoryManager.loadRuntimeState() ?? {}),
       ...saved_state
     };
     console.log(`[DEBUG] Initial State:`, this.runtime_state);
@@ -98,6 +102,18 @@ export class Character {
     );
 
     this.runtime_state.last_state_update_at = now;
+
+    // 持久化运行状态，保证进程重启后可恢复（崩溃最多丢失一个更新周期内的演化）
+    this.memoryManager.saveRuntimeState({
+      mood: this.runtime_state.mood,
+      energy: this.runtime_state.energy,
+      boredom: this.runtime_state.boredom,
+      last_interaction_at: this.runtime_state.last_interaction_at,
+      is_active: this.runtime_state.is_active,
+      last_state_update_at: this.runtime_state.last_state_update_at,
+      last_active_session_id: this.runtime_state.last_active_session_id,
+    });
+
     console.log(`[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)}`);
   }
 
@@ -114,6 +130,28 @@ export class Character {
     if (!sessionId) {
       console.log(`[DEBUG] [${this.config.name}] No active session, skipping proactive pulse.`);
       return { action: 'none', payload: { reason: 'no_active_session' } };
+    }
+
+    // 时间触发：对话空闲超过阈值，判定为对话段落结束，异步总结 L1 → L2
+    const idleThresholdMs = (this.config.memory?.idle_summarize_minutes ?? 120) * 60_000;
+    if (Date.now() - this.runtime_state.last_interaction_at > idleThresholdMs) {
+      this.memoryManager.summarizeToEpisode(this.config, sessionId, Date.now())
+        .catch((err) => console.error(`[ERROR] [${this.config.name}] 空闲总结失败:`, err));
+    }
+
+    // 睡眠期固化：睡眠时段内，以最小间隔为限，异步将 L2 事件提炼为 L3 长期印象
+    const consolidateIntervalMs = this.config.memory?.consolidate_interval_ms ?? 6 * 60 * 60 * 1000;
+    const lastConsolidatedAt = this.runtime_state.last_consolidated_at ?? 0;
+    if (
+      classifyHour(new Date().getHours()) === 'sleep'
+      && Date.now() - lastConsolidatedAt > consolidateIntervalMs
+      && isChromaReady()
+    ) {
+      this.runtime_state.last_consolidated_at = Date.now();
+      for (const sid of this.memoryManager.getSessionIds()) {
+        this.memoryManager.consolidateToSemantic(this.config, sid, Date.now())
+          .catch((err) => console.error(`[ERROR] [${this.config.name}] 睡眠期固化失败:`, err));
+      }
     }
 
     // 调用 ML sidecar 进行 proactive 判定
@@ -179,6 +217,16 @@ export class Character {
     
     // 持久化当前消息到 L1 感知层
     this.memoryManager.addMessage(new DomainMessage(message));
+
+    // 容量触发：L1 超出警戒水位时，异步将最旧的消息总结为 L2 事件梗概
+    const l1Capacity = this.config.memory?.l1_capacity ?? 20;
+    if (this.memoryManager.getMessageCount(message.session_id) > l1Capacity) {
+      const cutoff = this.memoryManager.getCutoffTimestamp(message.session_id, l1Capacity);
+      if (cutoff !== null) {
+        this.memoryManager.summarizeToEpisode(this.config, message.session_id, cutoff)
+          .catch((err) => console.error(`[ERROR] [${this.config.name}] L1→L2 容量总结失败:`, err));
+      }
+    }
     
     if (message.silent) {
       console.log(`[DEBUG] [${this.config.name}] Silent message received, skipping reAct loop.`);

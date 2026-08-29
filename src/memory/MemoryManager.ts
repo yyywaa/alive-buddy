@@ -6,6 +6,19 @@ import { addImpression, queryImpressions } from './chroma.js';
 import OpenAI from 'openai';
 
 /**
+ * 可持久化的运行状态字段子集（对应 runtime_states 表）
+ */
+export interface PersistedRuntimeState {
+  mood: number;
+  energy: number;
+  boredom: number;
+  last_interaction_at: number;
+  is_active: boolean;
+  last_state_update_at?: number;
+  last_active_session_id?: string;
+}
+
+/**
  * 每个 Character 对应一个 MemoryManager 实例，
  * 管理该 Character 的 L1 感知层、L2 事件层，并负责向 L3 印象层写入。
  */
@@ -82,13 +95,100 @@ export class MemoryManager {
   }
 
   /**
+   * 持久化运行状态到 runtime_states 表（整行覆盖）
+   */
+  saveRuntimeState(state: PersistedRuntimeState): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO runtime_states
+        (character_id, mood, energy, boredom, last_interaction_at, is_active, last_state_update_at, last_active_session_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      this.characterId,
+      state.mood,
+      state.energy,
+      state.boredom,
+      state.last_interaction_at,
+      state.is_active ? 1 : 0,
+      state.last_state_update_at ?? null,
+      state.last_active_session_id ?? null
+    );
+  }
+
+  /**
+   * 读取持久化的运行状态；从未持久化过时返回 null
+   */
+  loadRuntimeState(): PersistedRuntimeState | null {
+    const row = this.db.prepare(`
+      SELECT * FROM runtime_states WHERE character_id = ?
+    `).get(this.characterId) as {
+      mood: number;
+      energy: number;
+      boredom: number;
+      last_interaction_at: number | null;
+      is_active: number;
+      last_state_update_at: number | null;
+      last_active_session_id: string | null;
+    } | undefined;
+
+    if (!row) return null;
+    return {
+      mood: row.mood,
+      energy: row.energy,
+      boredom: row.boredom,
+      last_interaction_at: row.last_interaction_at ?? Date.now(),
+      is_active: !!row.is_active,
+      last_state_update_at: row.last_state_update_at ?? undefined,
+      last_active_session_id: row.last_active_session_id ?? undefined,
+    };
+  }
+
+  /**
+   * 统计指定会话在 L1 感知层中的消息条数
+   */
+  getMessageCount(sessionId: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count FROM messages
+      WHERE character_id = ? AND session_id = ?
+    `).get(this.characterId, sessionId) as { count: number };
+    return row.count;
+  }
+
+  /**
+   * 获取"保留最新 keep 条消息"的切割时间戳：
+   * 即第 keep+1 新（倒数）消息的 timestamp；消息不足 keep+1 条时返回 null
+   */
+  getCutoffTimestamp(sessionId: string, keep: number): number | null {
+    const row = this.db.prepare(`
+      SELECT timestamp FROM messages
+      WHERE character_id = ? AND session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT 1 OFFSET ?
+    `).get(this.characterId, sessionId, keep) as { timestamp: number } | undefined;
+    return row ? row.timestamp : null;
+  }
+
+  /**
+   * 列出该 Character 出现过消息或事件的所有会话 ID
+   */
+  getSessionIds(): string[] {
+    const rows = this.db.prepare(`
+      SELECT session_id FROM messages WHERE character_id = ?
+      UNION
+      SELECT session_id FROM episodes WHERE character_id = ?
+    `).all(this.characterId, this.characterId) as { session_id: string }[];
+    return rows.map(r => r.session_id);
+  }
+
+  /**
    * 将过期消息从感知层物理剥离，并转化为 L2 剧情梗概存入 episodes 表。
+   * 边界为闭区间：timestamp <= beforeTimestamp 的消息都会被总结
+   * （避免同一毫秒内到达的消息被漏掉）。
    */
   async summarizeToEpisode(config: CharacterConfig, sessionId: string, beforeTimestamp: number): Promise<void> {
     // 1. 获取要剥离的消息（按时间正序排列）
     const msgRows = this.db.prepare(`
       SELECT msg_id, payload FROM messages
-      WHERE character_id = ? AND session_id = ? AND timestamp < ?
+      WHERE character_id = ? AND session_id = ? AND timestamp <= ?
       ORDER BY timestamp ASC
     `).all(this.characterId, sessionId, beforeTimestamp) as { msg_id: string, payload: string }[];
 
@@ -147,7 +247,7 @@ export class MemoryManager {
     // 1. 获取需要提炼的 L2 剧情梗概
     const episodes = this.db.prepare(`
       SELECT id, summary FROM episodes
-      WHERE character_id = ? AND session_id = ? AND created_at < ?
+      WHERE character_id = ? AND session_id = ? AND created_at <= ?
       ORDER BY created_at ASC
     `).all(this.characterId, sessionId, beforeTimestamp) as { id: number, summary: string }[];
 

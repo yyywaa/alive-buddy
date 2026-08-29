@@ -125,7 +125,7 @@ export class ProactiveEngine {
  * - break: 12:00 ~ 13:59 或 18:00 ~ 21:59
  * - 其余为自由活动时段，三个布尔值均为 false
  */
-function classifyHour(hour: number): 'sleep' | 'work' | 'break' | 'free' {
+export function classifyHour(hour: number): 'sleep' | 'work' | 'break' | 'free' {
   if (hour >= 22 || hour < 8) return 'sleep';
   if (hour >= 9 && hour < 18) return 'work';
   if ((hour >= 12 && hour < 14) || (hour >= 18 && hour < 22)) return 'break';

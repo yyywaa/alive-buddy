@@ -77,6 +77,13 @@ export function initSQLite(characterId: string, dbPath?: string): DatabaseType {
     CREATE INDEX IF NOT EXISTS idx_media_character_session_time ON media_registry(character_id, session_id, timestamp);
   `);
 
+  // 兼容旧库：为 runtime_states 补充新增列（列已存在时 ALTER 抛错，忽略即可）
+  for (const column of ['last_state_update_at INTEGER', 'last_active_session_id TEXT']) {
+    try {
+      db.exec(`ALTER TABLE runtime_states ADD COLUMN ${column}`);
+    } catch { /* 列已存在 */ }
+  }
+
   dbInstances.set(characterId, db);
   return db;
 }
