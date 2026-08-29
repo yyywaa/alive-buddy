@@ -63,12 +63,17 @@ export class LLMCall {
       return target + source;
     }
 
-    // 2. 如果源是数组，递归处理每一项（通常用于 tool_calls 的索引拼接）
+    // 2. 源是数组：递归处理每一项。
+    // OpenAI 流式 tool_calls 增量携带对象内的 index 字段标识目标槽位，
+    // 若直接按数组位置合并，并行工具调用会串位，因此优先按 index 归位。
     if (Array.isArray(source)) {
       const targetArr = Array.isArray(target) ? (target as unknown[]) : [];
       const result = [...targetArr];
       source.forEach((item, index) => {
-        result[index] = this.deepMerge(result[index], item);
+        const slot = (item !== null && typeof item === 'object' && typeof (item as { index?: unknown }).index === 'number')
+          ? (item as { index: number }).index
+          : index;
+        result[slot] = this.deepMerge(result[slot], item);
       });
       return result;
     }

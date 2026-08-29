@@ -25,17 +25,17 @@ export class MemoryManager {
   addMessage(msg: Message) {
     const data = msg.data;
 
-    // 使用事务保证一致性
+    // 使用事务保证一致性；INSERT OR IGNORE 使重复投递（重试/重连补发）幂等，不中断消息流
     const insertTx = this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO messages (msg_id, character_id, session_id, timestamp, payload) 
+        INSERT OR IGNORE INTO messages (msg_id, character_id, session_id, timestamp, payload) 
         VALUES (?, ?, ?, ?, ?)
       `).run(data.msg_id, this.characterId, data.session_id, data.timestamp, msg.toJSONString());
 
       // 如果包含媒体，则更新多模态索引
       if (msg.hasMedia()) {
         this.db.prepare(`
-          INSERT INTO media_registry (msg_id, character_id, session_id, timestamp)
+          INSERT OR IGNORE INTO media_registry (msg_id, character_id, session_id, timestamp)
           VALUES (?, ?, ?, ?)
         `).run(data.msg_id, this.characterId, data.session_id, data.timestamp);
       }

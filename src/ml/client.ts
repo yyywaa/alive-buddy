@@ -76,5 +76,5 @@ export class ProactiveModelClient {
  * 默认单例：从环境变量读取 sidecar 地址
  */
 export const defaultProactiveClient = new ProactiveModelClient({
-  baseUrl: process.env.ML_SIDECAR_URL ?? 'http://127.0.0.1:8000',
+  baseUrl: process.env.ML_SIDECAR_URL ?? 'http://127.0.0.1:8001',
 });

@@ -12,6 +12,7 @@ dist/
 # Database & generated data
 data/*.db
 data/*.sqlite
+data/characters/
 !data/training_data.csv
 
 # Editor

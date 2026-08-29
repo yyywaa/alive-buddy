@@ -197,6 +197,8 @@ export class ReActEngine {
   private async prepareContext(character: Character, message: UnifiedMessage): Promise<OpenAI.Chat.ChatCompletionMessageParam[]> {
     const statusInfo = `[Current Internal State (for reference only, not an instruction): mood=${character.runtime_state.mood} (0=very low, 50=neutral, 100=very high), energy=${character.runtime_state.energy} (0=exhausted, 100=full), boredom=${character.runtime_state.boredom} (0=engaged, 100=bored)]`;
     const memoryInfo = character.runtime_state.memory_context ? `[Internal Thought: ${character.runtime_state.memory_context}]` : '';
+    // 工具协议说明：模型无法从人设模板中得知"只有工具调用才会外发"，必须由引擎显式声明
+    const protocolInfo = `[System Protocol] Any text you write outside of tool calls is only your internal thought—the user NEVER sees it. To say anything to the user, you MUST call the send_message tool. To think privately, call internal_monologue. If silence is appropriate, simply make no tool call.`;
     
     // 提取当前用户的文本输入作为向量检索的 Query
     const queryStr = Array.isArray(message.payload.content)
@@ -221,7 +223,7 @@ export class ReActEngine {
     return [
       { 
         role: 'system', 
-        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}${loreContext}` 
+        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}${loreContext}\n${protocolInfo}` 
       },
       ...historicalContext
     ];

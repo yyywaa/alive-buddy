@@ -44,12 +44,15 @@ reAct 循环内部：LLM 生成 thought → 选择调用工具（`send_message` 
 
 > `.env` 核心配置说明：
 > ```env
+> # 注意：OPENAI_* 仅用于数据蒸馏脚本 (src/ml/distill.py)；
+> # 运行时的 LLM 凭证由 CharacterConfig（SDK 或 /v1/session/init）传入
 > OPENAI_API_KEY="your-api-key"
 > OPENAI_BASE_URL="https://api.openai.com/v1"   # 兼容 OpenAI 格式即可
 > LLM_MODEL="gpt-4o"
 > 
 > ML_SIDECAR_URL="http://127.0.0.1:8001"
 > CHROMA_URL="http://127.0.0.1:8000"
+> # PULSE_INTERVAL_MS="60000"   # 主动脉搏间隔，可选
 > ```
 
 ### 1. 终端 A：启动 ML Sidecar (必须)
@@ -240,6 +243,31 @@ main();
 
 ---
 
+## 测试与验证
+
+项目内置两层自动化验证，均不需要外部服务常驻：
+
+```bash
+# 单元 + 集成测试（node:test，23 个用例）
+# 集成测试会用本地 stub LLM 服务器跑通完整 reAct 回路，不消耗真实 API 调用
+npm test
+
+# 全量类型检查（覆盖 src / test / scripts）
+npm run typecheck
+```
+
+另有端到端真实验证脚本 `scripts/e2e-endra.ts`：以无头方式拉起 ML Sidecar 与 API 主服务，初始化 Endra（末影龙）角色，通过 WebSocket 发送真实用户消息，并断言 Agent 的回复经 `send_message` 工具送达本地 webhook、debug 思考流与 proactive 脉搏决策均正常。
+
+```bash
+# 凭证通过环境变量传入，不会写入任何文件
+E2E_LLM_API_KEY=sk-xxx \
+E2E_LLM_BASE_URL=https://api.deepseek.com/v1 \
+E2E_LLM_MODEL=deepseek-v4-flash \
+npm run e2e
+```
+
+---
+
 ## 项目结构
 
 ```
@@ -263,7 +291,10 @@ alive-buddy/
 │       └── client.ts    # TS 侧调用 sidecar 的客户端
 ├── data/
 │   ├── training_data.csv    # 预置训练数据
-│   └── characters/          # 角色持久化数据（SQLite）
+│   └── characters/          # 角色持久化数据（SQLite，gitignored）
+├── test/                # node:test 单元与集成测试（npm test）
+├── scripts/
+│   └── e2e-endra.ts     # 端到端真实验证（npm run e2e，见"测试与验证"）
 └── docs/
     ├── PLAN.md              # 设计文档
     └── API.md               # 接口文档
@@ -285,7 +316,7 @@ alive-buddy/
 
 ## 当前状态
 
-早期原型，核心链路可用。State Engine 已实现心情/精力/无聊度的自然演化；Skills 与用户反馈微调仍在开发中。详见 [docs/PLAN.md](docs/PLAN.md)。
+核心链路（被动 reAct 回复 + 主动脉搏决策）已端到端打通并通过真实 LLM 验证；`npm test` 提供 23 个单元/集成用例。State Engine 已实现心情/精力/无聊度的自然演化；Skills 与用户反馈微调仍在开发中。详见 [docs/PLAN.md](docs/PLAN.md)。
 
 ---
 

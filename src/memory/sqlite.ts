@@ -14,7 +14,8 @@ export function initSQLite(characterId: string, dbPath?: string): DatabaseType {
     return dbInstances.get(characterId)!;
   }
 
-  const defaultPath = path.resolve(process.cwd(), `data/characters/${characterId}/memory.db`);
+  const baseDir = process.env.ALIVE_BUDDY_DATA_DIR ?? path.resolve(process.cwd(), 'data');
+  const defaultPath = path.join(baseDir, 'characters', characterId, 'memory.db');
   const targetPath = dbPath || defaultPath;
 
   // 确保目录存在
