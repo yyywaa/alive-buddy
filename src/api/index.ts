@@ -116,6 +116,26 @@ export function buildApp(options: ApiServerOptions = {}): FastifyInstance {
       const character = new Character(config);
       sessions.set(sessionId, character);
 
+      // 同一角色重复 init（connector 重连/重启、或服务重启后重 init）都会换新 session_id。
+      // L1/L2 记忆按 session_id 隔离提取，不换绑的话角色每次都会"失忆"：
+      // 先把上一个会话的记忆划归到新会话名下，再摘除同角色的旧 session（含脉搏定时器），
+      // 避免双实例同时思考/发言。
+      const prevSessionId = character.runtime_state.last_active_session_id;
+      if (prevSessionId && prevSessionId !== sessionId) {
+        const moved = character.memoryManager.reassignSession(prevSessionId, sessionId);
+        character.runtime_state.last_active_session_id = sessionId;
+        console.log(`[DEBUG] 记忆继承: session ${prevSessionId} → ${sessionId}，迁移 ${moved} 条 L1 消息`);
+      }
+      for (const [sid, ch] of sessions) {
+        if (sid !== sessionId && ch.config.id === config.id) {
+          const oldTimer = pulseTimers.get(sid);
+          if (oldTimer) clearInterval(oldTimer);
+          pulseTimers.delete(sid);
+          sessions.delete(sid);
+          console.log(`[DEBUG] 摘除同角色旧 session: ${sid}`);
+        }
+      }
+
       // 挂上 proactive 脉搏：周期性演化状态，并由 ML 决策树判定是否主动发消息
       const timer = setInterval(() => {
         character.pulse().catch((err) => {

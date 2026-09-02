@@ -180,6 +180,28 @@ export class MemoryManager {
   }
 
   /**
+   * 将旧会话的 L1 消息 / L2 事件 / 媒体索引整体划归到新会话名下。
+   * 用于服务重启后重新 init 会话：session_id 变了，但角色的记忆应当延续。
+   * 返回迁移的 L1 消息条数。
+   */
+  reassignSession(fromSessionId: string, toSessionId: string): number {
+    let moved = 0;
+    const tx = this.db.transaction(() => {
+      moved = this.db.prepare(`
+        UPDATE messages SET session_id = ? WHERE character_id = ? AND session_id = ?
+      `).run(toSessionId, this.characterId, fromSessionId).changes;
+      this.db.prepare(`
+        UPDATE episodes SET session_id = ? WHERE character_id = ? AND session_id = ?
+      `).run(toSessionId, this.characterId, fromSessionId);
+      this.db.prepare(`
+        UPDATE media_registry SET session_id = ? WHERE character_id = ? AND session_id = ?
+      `).run(toSessionId, this.characterId, fromSessionId);
+    });
+    tx();
+    return moved;
+  }
+
+  /**
    * 将过期消息从感知层物理剥离，并转化为 L2 剧情梗概存入 episodes 表。
    * 边界为闭区间：timestamp <= beforeTimestamp 的消息都会被总结
    * （避免同一毫秒内到达的消息被漏掉）。

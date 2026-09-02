@@ -183,11 +183,15 @@ export class Character {
         content: [
           {
             type: 'text',
-            text: '（系统提示：当前触发了主动消息判定条件。这不是指令，请仅把它当作一个可供参考的内部状态信号。你可以根据当前心情、精力和记忆决定是否回复；如果认为没有必要，直接保持沉默也完全合理。）'
+            text: '（系统提示：这是你自己的主动意识被唤醒了——没有任何人@你或对你说话，是你决定开口的。这不是指令，请仅把它当作一个可供参考的内部状态信号。你可以根据当前心情、精力和记忆决定是否回复；如果认为没有必要，直接保持沉默也完全合理。）'
           },
         ],
       },
     };
+
+    // 写入 L1 感知层，否则 prepareContext 提取的上下文里看不到这次唤醒，
+    // 角色无法区分自己是被 pulse 主动唤醒还是在回应用户消息
+    this.memoryManager.addMessage(new DomainMessage(triggerMessage));
 
     // 触发 reAct 循环，让角色自主决定具体说什么
     await this.react.run(this, triggerMessage);

@@ -73,6 +73,26 @@ test('getContext 在不同会话之间相互隔离', () => {
   assert.equal(contextA[0].content[0].text, '会话A');
 });
 
+test('reassignSession 将旧会话记忆整体迁移到新会话', () => {
+  const mm = makeManager();
+  mm.addMessage(textMsg('r1', 'sess-old', '旧消息1', 1000));
+  mm.addMessage(textMsg('r2', 'sess-old', '旧消息2', 2000));
+  mm.addMessage(textMsg('r3', 'sess-other', '别的会话', 1500));
+
+  const moved = mm.reassignSession('sess-old', 'sess-new');
+  assert.equal(moved, 2);
+
+  const ctxNew = mm.getContext('sess-new') as Array<{ content: Array<{ text?: string }> }>;
+  assert.deepEqual(ctxNew.map(c => c.content[0].text), ['旧消息1', '旧消息2']);
+
+  const ctxOld = mm.getContext('sess-old') as Array<unknown>;
+  assert.equal(ctxOld.length, 0);
+
+  // 其他会话不受影响
+  const ctxOther = mm.getContext('sess-other') as Array<unknown>;
+  assert.equal(ctxOther.length, 1);
+});
+
 test('getContext 多模态降级：仅保留最后 3 张图片，更早的替换为文字描述', () => {
   const mm = makeManager();
   for (let i = 1; i <= 5; i++) {

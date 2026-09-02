@@ -40,16 +40,29 @@ export class LLMCall {
       ...this.config.llm_setting,
     };
 
-    if (isStream) {
-      return await this.client.chat.completions.create(
-        { ...baseParams, stream: true },
-        { signal } // 传递信号
-      );
-    } else {
-      return await this.client.chat.completions.create(
-        { ...baseParams, stream: false },
-        { signal } // 传递信号
-      );
+    try {
+      if (isStream) {
+        return await this.client.chat.completions.create(
+          { ...baseParams, stream: true },
+          { signal } // 传递信号
+        );
+      } else {
+        return await this.client.chat.completions.create(
+          { ...baseParams, stream: false },
+          { signal } // 传递信号
+        );
+      }
+    } catch (err) {
+      // 调试：dump 出错请求的消息结构（角色、是否带 reasoning_content/tool_calls）
+      const shape = messages.map((m: any) => ({
+        role: m.role,
+        has_reasoning: m.reasoning_content != null,
+        has_tool_calls: Array.isArray(m.tool_calls) && m.tool_calls.length > 0,
+        content_type: typeof m.content,
+        content_preview: (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))?.slice(0, 80),
+      }));
+      console.error(`[DEBUG] [LLMCall] request failed, messages shape: ${JSON.stringify(shape)}`);
+      throw err;
     }
   }
 
@@ -58,6 +71,13 @@ export class LLMCall {
    * 无视关键字，递归字典到最底层进行字符串拼接或值覆盖
    */
   private static deepMerge(target: unknown, source: unknown): unknown {
+    // 0. 源是 null/undefined：保留目标值。
+    // 流式尾帧常携带占位清空字段（如 deepseek thinking 模式的 reasoning_content: null），
+    // 直接覆盖会把已累积的思考链抹掉，导致下一轮请求被 API 拒绝。
+    if (source === null || source === undefined) {
+      return target;
+    }
+
     // 1. 如果源是字符串，且目标也是字符串，则拼接
     if (typeof source === 'string' && typeof target === 'string') {
       return target + source;

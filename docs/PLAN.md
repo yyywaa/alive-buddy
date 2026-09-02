@@ -222,6 +222,8 @@ alive-buddy/
 ### 3. 技能沙箱 (The "Extendable" Skills) - **优先级：中**
 *   [ ] 开发 `src/skills` 的动态加载器，支持热更新技巧。
 *   [ ] 构建安全沙箱环境，用于执行外部 Python/JS 脚本。
+    *   **方向（已定）**：每种语言一个常驻 runner 子进程 + stdio JSON-RPC 通信，复用 ML sidecar 的"双引擎"思路；首发限制超时与输出大小，资源限额（CPU/内存）后续迭代。备选：`isolated-vm`（仅 JS、构建成本高）、Docker/gVisor（最重，与部署一并考虑）。
+    *   **现状提醒**：`CharacterConfig.extend_tool_list` / `extend_skills_list` 字段存在但均未被 `ToolRegistry` 消费，实现时需先打通这层注册。
 
 ### 4. 客户端适配器与穿透 - **优先级：中**
 *   [ ] 在 `SendMessageTool` 中集成 `cloudscraper`，增强网络穿透力。

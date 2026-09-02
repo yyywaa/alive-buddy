@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+data/characters
+data/chroma
+.env
+*.log
+__pycache__
+test
+scripts
+docs

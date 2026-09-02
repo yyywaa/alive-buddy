@@ -219,6 +219,14 @@ export class ReActEngine {
     
     // 动态提取对话上下文，由于 onMessage 已经执行过 addMessage，这里提取出的自动包含最新用户的发言。
     const historicalContext = character.memoryManager.getContext(message.session_id) as OpenAI.Chat.ChatCompletionMessageParam[];
+
+    // thinking 模式模型（如 deepseek-v4-flash）要求历史 assistant 消息回传 reasoning_content，
+    // 但 L1 记忆只保存了文本。为缺失的历史 assistant 消息补占位思考链，否则 API 返回 400。
+    for (const m of historicalContext) {
+      if (m.role === 'assistant' && (m as unknown as Record<string, unknown>).reasoning_content == null) {
+        (m as unknown as Record<string, unknown>).reasoning_content = '(历史发言，原始思考链未保留)';
+      }
+    }
     
     return [
       { 

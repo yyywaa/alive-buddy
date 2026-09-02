@@ -297,7 +297,8 @@ alive-buddy/
 │   └── e2e-endra.ts     # 端到端真实验证（npm run e2e，见"测试与验证"）
 └── docs/
     ├── PLAN.md              # 设计文档
-    └── API.md               # 接口文档
+    ├── API.md               # 接口文档
+    └── ENDRA_MIGRATION.md   # Endra 重构交接文档（对接 alive-buddy）
 ```
 
 ---
