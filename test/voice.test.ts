@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { VOICE_FIT_REMINDER } from '../src/brain/voice.js';
 
-test('腔调提醒是"看场合选"，不是机械轮换', () => {
-  assert.match(VOICE_FIT_REMINDER, /先判断眼前是什么场合/);
-  assert.match(VOICE_FIT_REMINDER, /不是轮流换/);
-  assert.ok(!/连用三次算失败/.test(VOICE_FIT_REMINDER), '不应再是轮值规则');
+test('提醒只给"想清楚"的问题，不指定腔调', () => {
+  assert.match(VOICE_FIT_REMINDER, /一个博学傲慢的末影龙王/);
+  assert.match(VOICE_FIT_REMINDER, /会怎么说话？/);
+  assert.match(VOICE_FIT_REMINDER, /没有规定/);
+  assert.match(VOICE_FIT_REMINDER, /而不是一个助手、或一个学者会说的话/);
+  assert.match(VOICE_FIT_REMINDER, /不超过三句/);
 });
 
-test('人文话题指向学者腔与查证，龙话题指向"你就是末影龙"', () => {
-  assert.match(VOICE_FIT_REMINDER, /学者腔/);
-  assert.match(VOICE_FIT_REMINDER, /用工具查/);
-  assert.match(VOICE_FIT_REMINDER, /你就是末影龙/);
-  assert.match(VOICE_FIT_REMINDER, /别用人类学者的口吻讲自己/);
+test('不再有任何腔调清单/场合映射/轮值规则', () => {
+  for (const removed of ['学者腔', '君王腔', '野兽腔', '老贵族腔', '轮', '场合']) {
+    assert.ok(!VOICE_FIT_REMINDER.includes(removed), `不该再指定：${removed}`);
+  }
 });
 
 test('不指定内容题材', () => {
