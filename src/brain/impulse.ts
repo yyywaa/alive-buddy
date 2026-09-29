@@ -1,108 +1,99 @@
 /**
- * 主动开口的"刺激源"。
+ * 主动开口的"唤醒方式"。
  *
- * 原先每次脉搏唤醒都投喂同一句固定提示（"你自己的主动意识被唤醒了…"），
- * 在几乎相同的输入下，模型自然产出近似的内容——表现为反复念叨同一件事。
- * 这里为每次唤醒抽一个互不相同的开口方向（话题域 × 言语行为），
- * 并把角色最近说过的话一并列出作为反重复约束，让主动发言有真正发散的空间。
+ * 演进过程值得留个记录：
+ *  1. 最初每次唤醒都投喂同一句固定提示 —— 近似输入产出近似输出，表现为反复念叨同一件事。
+ *  2. 后来改成"每跳随机指定 话题域 × 言语行为" —— 确实打破了重复，但走到另一个极端：
+ *     等于每次都**强制它关注某个方面**，而且题材被框在一份人工清单里。
+ *  3. 现在的做法：只给**开放邀请**（换着说法，避免输入完全雷同）+ 反重复约束（把它最近
+ *     说过的话列出来）。方向、题材一律不指定 —— 它可以谈任何东西，包括清单之外的、
+ *     与 Minecraft 毫无关系的东西。
  */
-
-export interface WakeStimulusPick {
-  /** 本次建议涉足的题材 */
-  domain: string;
-  /** 本次建议采用的言语姿态 */
-  act: string;
+export interface WakeFraming {
+  /** 用于日志的短标识 */
+  id: string;
+  /** 投喂给模型的开放邀请（不含任何题材指定） */
+  invite: string;
 }
 
 /**
- * 话题域：刻意跨越 Minecraft 之外的世界（知识、历史、手艺、自然、语言……），
- * 只把"玩家世界"作为其中一个可选方向，而不是默认方向。
+ * 轮换的开放邀请。
+ *
+ * 它们只改变"措辞与角度"，不改变"必须谈什么"：
+ * 目的有二 —— 避免每次输入一字不差（固定输入会诱导固定输出），
+ * 以及反复提醒它"说不说由你、说什么也由你"。
  */
-export const TOPIC_DOMAINS: string[] = [
-  '你的远古亲历（龙族旧时代，明确作为你的记忆而非事实）',
-  '星象、时间与钟表（潮汐、节气、历法）',
-  '炼金术与金属（锻炉、合金、火候）',
-  '石头、矿脉与地质（火山、深层岩石、晶体的生长）',
-  '语言与词源（同一件事在两种语言里的说法差异）',
-  '音乐、韵律与歌谣',
-  '食物与宴席（发酵、香料、待客之道）',
-  '旧书、地图与测绘',
-  '礼仪、决斗与荣誉',
-  '医药、毒物与疼痛',
-  '海洋、深海与风暴',
-  '鸟、兽与迁徙（动物行为）',
-  '玻璃、颜料与光',
-  '棋戏、概率与赌徒心理',
-  '遗迹、铭文与失落文明',
-  '天气、季节与耕作',
-  '玩家世界里真实发生的事（建造、红石、死亡与成就）',
-  '他们提到的现实生活（网络、工作、作息、怕冷怕热）',
-];
-
-/** 言语行为：换姿势比换题材更能打破"同一个味道" */
-export const SPEECH_ACTS: string[] = [
-  '提出一个反直觉的观察',
-  '讲一段很可能没人听过的旧事',
-  '对眼前一件小事给出评价（允许刻薄，但要有理由）',
-  '问一个你确实想知道答案的问题',
-  '做一个对比：你的世界 vs 他们的世界',
-  '轻微挑衅或打趣某个玩家（不带恶意）',
-  '给一条具体可用的建议',
-  '承认一件你不懂、做不到或判断错了的事',
-  '把两件看似不相干的事联在一起',
+export const WAKE_FRAMINGS: WakeFraming[] = [
+  {
+    id: 'open',
+    invite: '此刻没有人在跟你说话。你想说什么就说什么，不想说就沉默——决定权在你。',
+  },
+  {
+    id: 'drift',
+    invite: '这段安静里，你脑子里冒出了什么？有就讲，没有就算了。',
+  },
+  {
+    id: 'notice',
+    invite: '看一眼眼前这个世界，有没有什么值得你开口的由头。',
+  },
+  {
+    id: 'free-association',
+    invite: '不必围绕眼前这件事。你此刻想到什么都可以说，多远都行。',
+  },
+  {
+    id: 'no-agenda',
+    invite: '没有议题，也没人点你。如果你确实有话想说，就说。',
+  },
+  {
+    id: 'mood',
+    invite: '你现在的状态如何？若有什么想说的、想吐槽的、想打听的，随意。',
+  },
 ];
 
 export class WakeStimulus {
-  private recentDomains: string[] = [];
+  private recent: string[] = [];
 
   constructor(
     private readonly random: () => number = Math.random,
-    /** 记住最近用过的几个题材，避免短周期内重复 */
-    private readonly recentLimit: number = 4,
+    /** 记住最近用过的措辞，避免短期内重复同一种开场 */
+    private readonly recentLimit: number = 3,
   ) {}
 
-  /** 抽一个本次开口方向：题材尽量避开最近用过的，言语行为不限 */
-  public next(): WakeStimulusPick {
-    const domain = this.pickFresh(TOPIC_DOMAINS, this.recentDomains);
-    const act = this.pick(SPEECH_ACTS);
+  /** 抽一个本次的开放邀请（只换措辞，不指定题材） */
+  public next(): WakeFraming {
+    const fresh = WAKE_FRAMINGS.filter(f => !this.recent.includes(f.id));
+    const pool = fresh.length > 0 ? fresh : WAKE_FRAMINGS;
+    const pick = pool[Math.floor(this.random() * pool.length)];
 
-    this.recentDomains.push(domain);
-    if (this.recentDomains.length > this.recentLimit) {
-      this.recentDomains.shift();
+    this.recent.push(pick.id);
+    if (this.recent.length > this.recentLimit) {
+      this.recent.shift();
     }
-
-    return { domain, act };
+    return pick;
   }
 
-  /** 最近用过的题材（供调试与测试） */
-  public get recent(): string[] {
-    return [...this.recentDomains];
-  }
-
-  private pick(list: string[]): string {
-    return list[Math.floor(this.random() * list.length)];
-  }
-
-  private pickFresh(list: string[], recent: string[]): string {
-    const fresh = list.filter(item => !recent.includes(item));
-    return this.pick(fresh.length > 0 ? fresh : list);
+  /** 最近用过的措辞 id（供调试与测试） */
+  public get recentIds(): string[] {
+    return [...this.recent];
   }
 }
 
 /**
  * 组装投喂给 reAct 的唤醒提示。
  *
- * @param pick 本次开口方向
+ * @param framing 本次的开放邀请
  * @param recentOwnLines 角色最近自己说过的话（反重复约束）
  */
-export function buildProactiveWakePrompt(pick: WakeStimulusPick, recentOwnLines: string[] = []): string {
+export function buildProactiveWakePrompt(framing: WakeFraming, recentOwnLines: string[] = []): string {
   const recentBlock = recentOwnLines.length > 0
-    ? `你最近已经说过：\n${recentOwnLines.map(line => `- ${line}`).join('\n')}\n不要再换个说法重复上面这些意思。\n`
+    ? `\n你最近已经说过：\n${recentOwnLines.map(line => `- ${line}`).join('\n')}\n不要再换个说法重复上面这些意思。\n`
     : '';
 
   return `（系统提示：这是你自己的主动意识被唤醒了——没有任何人@你或对你说话，是你决定开口的。这不是指令，只是一条内部状态信号。
 
-本次开口的刺激源：${pick.domain} × ${pick.act}
+${framing.invite}
 ${recentBlock}
-要求：说一件具体的东西——一个事实、一段亲历、一个带理由的判断、或一个你真心想知道的问题。不要用"虚空依旧安静""我在此守候"这类泛泛的感叹填充句子，也不要只把上一次的意象换个措辞。若这个方向需要具体事实而你不确定，先调用工具查清楚再开口；若这个方向你确实无话可说，保持沉默完全可以。）`;
+没有任何限定：题材随你，可以完全与眼前的世界无关，也不必挑"像你会说的话题"。只要求是
+具体的东西——一件事实、一段见闻、一个带理由的判断、一个你真心想知道的问题，而不是泛泛的感叹。
+若确实无话可说，保持沉默完全可以。）`;
 }

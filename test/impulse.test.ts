@@ -1,64 +1,50 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  SPEECH_ACTS,
-  TOPIC_DOMAINS,
-  WakeStimulus,
-  buildProactiveWakePrompt,
-} from '../src/brain/impulse.js';
+import { WAKE_FRAMINGS, WakeStimulus, buildProactiveWakePrompt } from '../src/brain/impulse.js';
 
-/** 固定序列的伪随机，便于断言抽取结果 */
-function seq(values: number[]): () => number {
-  let i = 0;
-  return () => values[i++ % values.length];
-}
-
-test('题材池刻意涵盖 Minecraft 之外的方向', () => {
-  assert.ok(TOPIC_DOMAINS.length >= 12, '题材域应当足够多才谈得上发散');
-  const nonMinecraft = TOPIC_DOMAINS.filter(d => !d.includes('玩家世界') && !d.includes('他们提到'));
-  assert.ok(nonMinecraft.length >= TOPIC_DOMAINS.length - 2, '绝大多数方向不应是 Minecraft 题材');
-  assert.ok(SPEECH_ACTS.length >= 6);
-});
-
-test('连续抽取不会在短周期内重复同一题材', () => {
-  const stimulus = new WakeStimulus(Math.random, 4);
-  const picked: string[] = [];
-
-  for (let i = 0; i < 20; i++) {
-    picked.push(stimulus.next().domain);
-  }
-
-  // 滑动窗口内不出现重复
-  for (let i = 0; i < picked.length; i++) {
-    const window = picked.slice(Math.max(0, i - 4), i);
-    assert.ok(!window.includes(picked[i]), `第 ${i} 次与最近 4 次重复: ${picked[i]}`);
+test('开放邀请不含任何题材指定（不强制它关注某个方面）', () => {
+  // 回归：曾经每次唤醒都指定"话题域 × 言语行为"，等于强制它关注某个方面，
+  // 还把题材框在一份人工清单里。
+  const forbidden = ['Minecraft', '星象', '炼金', '地质', '词源', '音乐', '宴席', '玩家世界'];
+  for (const framing of WAKE_FRAMINGS) {
+    for (const word of forbidden) {
+      assert.ok(!framing.invite.includes(word), `邀请里不该出现题材限定词：${word}（${framing.id}）`);
+    }
   }
 });
 
-test('抽取结果始终来自候选池', () => {
-  const stimulus = new WakeStimulus(seq([0, 0.999, 0.5, 0.25]), 4);
-  for (let i = 0; i < 10; i++) {
-    const pick = stimulus.next();
-    assert.ok(TOPIC_DOMAINS.includes(pick.domain), pick.domain);
-    assert.ok(SPEECH_ACTS.includes(pick.act), pick.act);
-  }
-});
-
-test('唤醒提示包含方向、反重复清单与反套话要求', () => {
-  const prompt = buildProactiveWakePrompt(
-    { domain: '星象、时间与钟表（潮汐、节气、历法）', act: '问一个你确实想知道答案的问题' },
-    ['虚空依旧安静', '我在此守候'],
-  );
-
-  assert.match(prompt, /星象、时间与钟表/);
-  assert.match(prompt, /问一个你确实想知道答案的问题/);
-  assert.match(prompt, /虚空依旧安静/);
+test('唤醒提示明确说明题材不设限', () => {
+  const prompt = buildProactiveWakePrompt(WAKE_FRAMINGS[0], ['我在此守候']);
+  assert.match(prompt, /没有任何限定/);
+  assert.match(prompt, /题材随你/);
+  assert.match(prompt, /与眼前的世界无关/);
+  assert.match(prompt, /不会挑|不必挑/);
+  assert.match(prompt, /我在此守候/);
   assert.match(prompt, /不要再换个说法重复/);
-  assert.match(prompt, /保持沉默/);
-  assert.match(prompt, /先调用工具查清楚/, '主动开口也应被鼓励先查工具');
+  assert.match(prompt, /保持沉默完全可以/);
+});
+
+test('措辞会轮换（避免输入完全雷同诱导固定输出）', () => {
+  const stimulus = new WakeStimulus(Math.random, 3);
+  const ids: string[] = [];
+  for (let i = 0; i < 12; i++) ids.push(stimulus.next().id);
+
+  for (let i = 0; i < ids.length; i++) {
+    const window = ids.slice(Math.max(0, i - 3), i);
+    assert.ok(!window.includes(ids[i]), `第 ${i} 次与最近 3 次雷同: ${ids[i]}`);
+  }
+  assert.ok(new Set(ids).size >= WAKE_FRAMINGS.length, '应当把所有措辞都用上');
+});
+
+test('抽出的邀请始终来自候选池', () => {
+  const stimulus = new WakeStimulus(() => 0.42, 3);
+  const ids = new Set(WAKE_FRAMINGS.map(f => f.id));
+  for (let i = 0; i < 8; i++) {
+    assert.ok(ids.has(stimulus.next().id));
+  }
 });
 
 test('没有历史发言时不出现空的"最近说过"段落', () => {
-  const prompt = buildProactiveWakePrompt({ domain: '旧书、地图与测绘', act: '讲一段旧事' }, []);
+  const prompt = buildProactiveWakePrompt(WAKE_FRAMINGS[1], []);
   assert.ok(!prompt.includes('你最近已经说过'));
 });

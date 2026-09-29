@@ -203,13 +203,13 @@ export class Character {
     this.runtime_state.last_pulse_at = Date.now();
 
     // 构造一个轻量的“自我触发”消息，用于在记忆中定位会话。
-    // 每次唤醒都换一个话题域与言语行为，并附上自己最近说过的话——固定不变的唤醒词
-    // 会让模型在近似输入下产出近似内容，这正是"总是重复"的直接来源。
-    const pick = this.wakeStimulus.next();
+    // 每次换一种"开放邀请"的措辞（不指定题材），并附上自己最近说过的话——
+    // 固定不变的唤醒词会让模型在近似输入下产出近似内容，而指定题材又等于强制它关注某个方面。
+    const framing = this.wakeStimulus.next();
     const recentOwnLines = this.memoryManager.getRecentOwnLines(sessionId, 3);
     console.log(
-      `[DEBUG] [${this.config.name}] Wake stimulus: ${pick.domain} × ${pick.act}` +
-      `（反重复参考 ${recentOwnLines.length} 条）`
+      `[DEBUG] [${this.config.name}] Wake framing: ${framing.id}` +
+      `（不带题材指定；反重复参考 ${recentOwnLines.length} 条）`
     );
 
     const triggerMessage: UnifiedMessage = {
@@ -222,7 +222,7 @@ export class Character {
         content: [
           {
             type: 'text',
-            text: buildProactiveWakePrompt(pick, recentOwnLines),
+            text: buildProactiveWakePrompt(framing, recentOwnLines),
           },
         ],
       },
