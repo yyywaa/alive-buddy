@@ -59,11 +59,17 @@ export class MemoryManager {
 
   /**
    * 提取当前 Character 指定会话的上下文，并自动应用多模态降级逻辑（仅保留最后 N 张图片）。
+   *
+   * 另外对内部独白做预算裁剪：internal_monologue 每调用一次就往 L1 写一条自己的嘀咕，
+   * 若全部回灌，角色的历史会被自己的回声填满（空频道场景下尤其明显），
+   * 于是"翻来覆去说同一件事"。最新那条思考仍通过 runtime_state.memory_context 进入提示词。
+   *
    * @param sessionId 目标聊天室 ID
    * @param limit 感知层提取的消息条数上限
    * @param maxImages 允许在上下文中保留明文图片的最大数量
+   * @param monologueBudget 允许回灌的历史独白条数（默认 1；传 -1 表示不裁剪）
    */
-  getContext(sessionId: string, limit: number = 20, maxImages: number = 3) {
+  getContext(sessionId: string, limit: number = 20, maxImages: number = 3, monologueBudget: number = 1) {
     // 1. 找出该会话最新出现的 maxImages 张包含媒体的消息 ID
     const mediaRows = this.db.prepare(`
       SELECT msg_id FROM media_registry 
@@ -85,13 +91,67 @@ export class MemoryManager {
 
     msgRows.reverse();
 
-    // 3. 反序列化并映射成 OpenAI Payload
-    return msgRows.map(row => {
+    // 3. 反序列化为领域对象，先做独白预算裁剪
+    let messages = msgRows.map(row => Message.fromJSONString(row.payload));
+
+    if (monologueBudget >= 0) {
+      const monologueIndexes = messages
+        .map((m, i) => (m.isInternalMonologue() ? i : -1))
+        .filter(i => i >= 0);
+      const dropCount = Math.max(0, monologueIndexes.length - monologueBudget);
+      if (dropCount > 0) {
+        const dropped = new Set(monologueIndexes.slice(0, dropCount));
+        messages = messages.filter((_, i) => !dropped.has(i));
+      }
+    }
+
+    // 4. 映射成 OpenAI Payload（O(1) 过滤：判断 msg_id 是否在最新图片许可名单里）
+    return messages.map(msg => msg.toOpenAIPayload(recentMediaIds.has(msg.data.msg_id)));
+  }
+
+  /**
+   * 读取最近的 L2 剧情梗概（按时间正序返回）。
+   *
+   * L2 原先只作为睡眠期固化（L2→L3）的输入，而 L3 依赖 ChromaDB；未部署 Chroma 时
+   * 这些梗概既不回灌提示词、也不会被清理，等于角色的长期记忆是死的：
+   * 早期对话被移出 L1 后就再也想不起来，只剩最近几十条消息可讲。这里把它们交给上下文组装。
+   */
+  getRecentEpisodes(sessionId: string, limit: number = 3): string[] {
+    if (limit <= 0) return [];
+    const rows = this.db.prepare(`
+      SELECT summary FROM episodes
+      WHERE character_id = ? AND session_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(this.characterId, sessionId, limit) as { summary: string }[];
+    return rows.map(r => r.summary).reverse();
+  }
+
+  /**
+   * 读取角色最近自己说过的话（不含内部独白），用于主动发言时的反重复提示。
+   */
+  getRecentOwnLines(sessionId: string, limit: number = 3): string[] {
+    if (limit <= 0) return [];
+    // 多取一些再过滤独白，保证能凑够 limit 条真正的"发言"
+    const rows = this.db.prepare(`
+      SELECT payload FROM messages
+      WHERE character_id = ? AND session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(this.characterId, sessionId, limit * 4) as { payload: string }[];
+
+    const lines: string[] = [];
+    for (const row of rows) {
       const msg = Message.fromJSONString(row.payload);
-      // O(1) 过滤：判断这根 msg_id 是否存在于最新图片许可名单里
-      const keepImage = recentMediaIds.has(msg.data.msg_id);
-      return msg.toOpenAIPayload(keepImage);
-    });
+      if (msg.data.payload.role !== 'assistant' || msg.isInternalMonologue()) continue;
+      const text = msg.data.payload.content
+        .map(item => (item.type === 'text' ? item.text ?? '' : ''))
+        .join(' ')
+        .trim();
+      if (text) lines.push(text);
+      if (lines.length >= limit) break;
+    }
+    return lines;
   }
 
   /**

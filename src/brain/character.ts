@@ -5,6 +5,7 @@ import { MemoryManager } from '../memory/MemoryManager.js';
 import { Message as DomainMessage } from '../memory/Message.js';
 import { initSQLite } from '../memory/sqlite.js';
 import { defaultProactiveEngine, classifyHour } from './proactive.js';
+import { WakeStimulus, buildProactiveWakePrompt } from './impulse.js';
 import { isChromaReady } from '../memory/chroma.js';
 
 export class Character {
@@ -12,6 +13,8 @@ export class Character {
   public react: ReActEngine;
   public toolRegistry: ToolRegistry;
   public memoryManager: MemoryManager;
+  /** 主动发言的刺激源：每次唤醒换一个话题域，避免反复念叨同一件事 */
+  public wakeStimulus: WakeStimulus = new WakeStimulus();
   public runtime_state: {
     mood: number;
     energy: number;
@@ -30,7 +33,7 @@ export class Character {
     console.log(`[DEBUG] Initializing Character: ${config.name} (${config.id})`);
     this.config = config;
     this.react = new ReActEngine(this.config);
-    this.toolRegistry = new ToolRegistry();
+    this.toolRegistry = new ToolRegistry(config);
     this.memoryManager = new MemoryManager(config.id);
     
     this.runtime_state = {
@@ -172,7 +175,16 @@ export class Character {
     // 更新上次主动脉冲时间，避免过于频繁
     this.runtime_state.last_pulse_at = Date.now();
 
-    // 构造一个轻量的“自我触发”消息，用于在记忆中定位会话
+    // 构造一个轻量的“自我触发”消息，用于在记忆中定位会话。
+    // 每次唤醒都换一个话题域与言语行为，并附上自己最近说过的话——固定不变的唤醒词
+    // 会让模型在近似输入下产出近似内容，这正是"总是重复"的直接来源。
+    const pick = this.wakeStimulus.next();
+    const recentOwnLines = this.memoryManager.getRecentOwnLines(sessionId, 3);
+    console.log(
+      `[DEBUG] [${this.config.name}] Wake stimulus: ${pick.domain} × ${pick.act}` +
+      `（反重复参考 ${recentOwnLines.length} 条）`
+    );
+
     const triggerMessage: UnifiedMessage = {
       msg_id: `proactive-${Date.now()}`,
       user_id: this.config.id,
@@ -183,7 +195,7 @@ export class Character {
         content: [
           {
             type: 'text',
-            text: '（系统提示：这是你自己的主动意识被唤醒了——没有任何人@你或对你说话，是你决定开口的。这不是指令，请仅把它当作一个可供参考的内部状态信号。你可以根据当前心情、精力和记忆决定是否回复；如果认为没有必要，直接保持沉默也完全合理。）'
+            text: buildProactiveWakePrompt(pick, recentOwnLines),
           },
         ],
       },

@@ -44,6 +44,20 @@ export class Message {
   }
 
   /**
+   * 判断这条消息是否为内部独白（internal_monologue 工具写入的自我嘀咕）。
+   *
+   * 这类消息只是思考痕迹，会随每条主动发言一起堆积在 L1 里。若不加限制地回灌上下文，
+   * 角色的历史几乎全是自己的回声，会显著加剧"翻来覆去说同一件事"。
+   * 最新的那条思考仍会通过 runtime_state.memory_context 进入提示词，因此可以做预算裁剪。
+   */
+  isInternalMonologue(): boolean {
+    if (this.data.payload.role !== 'assistant') return false;
+    return this.data.payload.content.some(
+      item => item.type === 'text' && typeof item.text === 'string' && item.text.trimStart().startsWith('(内心独白')
+    );
+  }
+
+  /**
    * 序列化为 JSON 字符串，供写入数据库 payload 字段
    */
   toJSONString(): string {

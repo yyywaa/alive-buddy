@@ -216,9 +216,32 @@ export class ReActEngine {
       // 容错处理：若 Chroma 未启动不应阻塞核心链路
       console.warn(`[DEBUG] [ReActEngine] ChromaDB query failed, skipping L3 memory injection.`);
     }
-    
+
+    const memoryConfig = character.config.memory ?? {};
+
+    // 早期对话已被浓缩成 L2 梗概并移出 L1。L3（Chroma）不可用时梗概原本永不回灌，
+    // 角色实际上只剩"最近几十条"的记忆，话题自然反复。这里显式注入。
+    let episodeContext = '';
+    try {
+      const episodes = character.memoryManager.getRecentEpisodes(
+        message.session_id,
+        memoryConfig.episode_context_limit ?? 3,
+      );
+      if (episodes.length > 0) {
+        episodeContext = `\n[往事梗概 (Earlier Chapters, 由更早的对话浓缩而成，可引用与延续)]\n- ${episodes.join('\n- ')}`;
+      }
+    } catch (e) {
+      console.warn(`[DEBUG] [ReActEngine] L2 episode injection failed, skipping.`, e);
+    }
+
     // 动态提取对话上下文，由于 onMessage 已经执行过 addMessage，这里提取出的自动包含最新用户的发言。
-    const historicalContext = character.memoryManager.getContext(message.session_id) as OpenAI.Chat.ChatCompletionMessageParam[];
+    // 窗口与独白预算可通过 config.memory 调整：窗口越大越记得住上下文，独白预算越小越不容易自我复读。
+    const historicalContext = character.memoryManager.getContext(
+      message.session_id,
+      memoryConfig.l1_context_limit ?? 30,
+      3,
+      memoryConfig.monologue_context_budget ?? 1,
+    ) as OpenAI.Chat.ChatCompletionMessageParam[];
 
     // thinking 模式模型（如 deepseek-v4-flash）要求历史 assistant 消息回传 reasoning_content，
     // 但 L1 记忆只保存了文本。为缺失的历史 assistant 消息补占位思考链，否则 API 返回 400。
@@ -231,7 +254,7 @@ export class ReActEngine {
     return [
       { 
         role: 'system', 
-        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}${loreContext}\n${protocolInfo}` 
+        content: `${character.config.system_prompt_template}\n${statusInfo}\n${memoryInfo}${loreContext}${episodeContext}\n${protocolInfo}` 
       },
       ...historicalContext
     ];

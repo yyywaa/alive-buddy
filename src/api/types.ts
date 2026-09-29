@@ -70,7 +70,12 @@ export interface CharacterConfig {
     api_key: string;      // LLM 专用 Key
     send_url: string;     // 客户端发送消息的 URL
     connect_headers: Record<string, string>; // 客户端连接 Headers
-    send_headers: Record<string, string>;    // 客户端发送 Headers
+    send_headers: Record<string, string>;    // 客户端发送 Headers（亦用于远程工具回调的鉴权头）
+    /**
+     * 远程工具的执行地址（由客户端提供）。extend_tool_list 里的工具定义在本服务注册，
+     * 实际执行发生在客户端，本服务通过该地址回调。
+     */
+    tool_url?: string;
     model: string;
   };
 
@@ -85,6 +90,12 @@ export interface CharacterConfig {
   memory?: {
     /** L1 感知层容量（条数），超出后最旧消息异步总结为 L2 事件，默认 20 */
     l1_capacity?: number;
+    /** 组装上下文时回灌的 L1 消息条数上限，默认 30 */
+    l1_context_limit?: number;
+    /** 上下文中允许保留的历史内部独白条数（-1 表示不裁剪），默认 1 */
+    monologue_context_budget?: number;
+    /** 注入提示词的最近 L2 剧情梗概条数，默认 3；0 表示关闭 */
+    episode_context_limit?: number;
     /** 对话空闲多少分钟判定段落结束并触发总结（L1→L2），默认 120 */
     idle_summarize_minutes?: number;
     /** 睡眠期固化（L2→L3）的最小间隔毫秒数，默认 6 小时 */
