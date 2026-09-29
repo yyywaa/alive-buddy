@@ -5,6 +5,9 @@ import OpenAI from 'openai';
 import { Stream } from 'openai/streaming';
 import { queryImpressions } from '../memory/chroma.js';
 
+/** 思考流聚合到多少字符就发一次日志（避免逐 token 刷屏） */
+const THOUGHT_FLUSH_CHARS = 120;
+
 export type ReActLogEntry = {
   type: 'thought' | 'action' | 'observation' | 'error' | 'status';
   content: string;
@@ -128,16 +131,32 @@ export class ReActEngine {
       const streamGenerator = LLMCall.assembleStream(iterator);
       
       let lastAccumulated: unknown = null;
+      // 思考流按段聚合后再发日志：流分片是逐 token 的，逐个 emitLog 会变成"一字一行"，
+      // 经 debug WS 打到客户端后会把日志彻底淹掉（实测每分钟数百行）。
+      let thoughtBuffer = '';
+      const flushThought = () => {
+        if (thoughtBuffer) {
+          this.emitLog('thought', thoughtBuffer);
+          thoughtBuffer = '';
+        }
+      };
 
       try {
         for await (const delta of streamGenerator) {
           lastAccumulated = delta.accumulated;
           if (delta.delta && typeof delta.delta === 'object' && 'content' in delta.delta) {
             const content = (delta.delta as { content?: string }).content;
-            if (content) this.emitLog('thought', content);
+            if (content) {
+              thoughtBuffer += content;
+              if (thoughtBuffer.length >= THOUGHT_FLUSH_CHARS || thoughtBuffer.includes('\n')) {
+                flushThought();
+              }
+            }
           }
         }
+        flushThought();
       } catch (streamErr: unknown) {
+        flushThought();
         // 流式链路出问题时不要让整轮对话失败：退回非流式重试一次。
         // 生产事故：长回复触发 SDK/组装层的栈溢出，整轮任务失败、玩家得不到任何回应。
         if (this.abortController?.signal.aborted) throw streamErr;

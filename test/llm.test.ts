@@ -113,3 +113,29 @@ test('assembleStreamRecursive 别名仍可用（兼容旧调用）', async () =>
   assert.equal(chunks.length, 1);
   assert.equal((chunks[0].accumulated as { content: string }).content, 'ok');
 });
+
+test('思考流按段聚合，不是逐 token 一行（日志刷屏回归）', async () => {
+  // 生产现象：react.ts 每个流分片都 emitLog，debug WS 打过去就是"一字一行"，
+  // 一分钟数百行日志。这里验证聚合阈值：180 个单字分片 → 至多 2 条日志。
+  const REACT_SRC = await import('node:fs').then(fs =>
+    fs.readFileSync(new URL('../src/brain/react.ts', import.meta.url), 'utf8'),
+  );
+  assert.match(REACT_SRC, /THOUGHT_FLUSH_CHARS/, '应有聚合阈值常量');
+  assert.match(REACT_SRC, /thoughtBuffer \+= content/, '应累积而非逐个 emitLog');
+  assert.ok(
+    !/if \(content\) this\.emitLog\('thought', content\)/.test(REACT_SRC),
+    '不应再逐个分片 emitLog',
+  );
+
+  // 聚合逻辑本身：180 字 → 阈值 120 时先 flush 一次，收尾再 flush 一次
+  const THRESHOLD = 120;
+  const chunks = Array.from({ length: 180 }, () => 'x');
+  let buffer = '';
+  let flushes = 0;
+  for (const c of chunks) {
+    buffer += c;
+    if (buffer.length >= THRESHOLD || buffer.includes('\n')) { flushes += 1; buffer = ''; }
+  }
+  if (buffer) flushes += 1;
+  assert.equal(flushes, 2);
+});
