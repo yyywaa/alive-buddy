@@ -21,6 +21,12 @@ export class ReActEngine {
   private abortController: AbortController | null = null;
   private currentTask: Promise<void> | null = null;
   private maxSteps: number = 10;
+  /** 每轮对话最多执行几个工具（工具往返每次都多一轮 LLM，直接拉长"答话滞后"的窗口） */
+  private maxToolCallsPerTurn: number = Number(process.env.MAX_TOOL_CALLS_PER_TURN ?? 3);
+  /** 每轮对话的软时限（毫秒）：超时后不再允许调工具，只能用已有信息作答 */
+  private maxTurnMs: number = Number(process.env.MAX_TURN_MS ?? 25_000);
+  private turnStartedAt: number = 0;
+  private toolCallsThisTurn: number = 0;
   
   // 日志回调函数
   public onLog?: (entry: ReActLogEntry) => void;
@@ -34,6 +40,11 @@ export class ReActEngine {
     const entry: ReActLogEntry = { type, content, timestamp: Date.now() };
     console.log(`[RE-ACT LOG][${type.toUpperCase()}] ${content}`);
     this.onLog?.(entry);
+  }
+
+  /** 当前这一轮是否已被中断（有更新的消息进来时 run() 会 kill 掉旧任务） */
+  public isAborted(): boolean {
+    return this.abortController?.signal.aborted === true;
   }
 
   /**
@@ -74,6 +85,8 @@ export class ReActEngine {
    */
   private async execute(character: Character, message: UnifiedMessage): Promise<void> {
     this.abortController = new AbortController();
+    this.turnStartedAt = Date.now();
+    this.toolCallsThisTurn = 0;
 
     // 精力按"一次对话"扣，而不是按"一次 LLM 调用"扣。
     // 原先写在 stepRecursive 里逐轮扣，加了工具之后一轮对话会走很多轮
@@ -206,9 +219,40 @@ export class ReActEngine {
     stepCount: number,
     contextMessage: UnifiedMessage
   ): Promise<void> {
+    // 这一轮是否已被更新的消息中断：中断后**不得执行任何工具**（尤其是有副作用的 send_message），
+    // 否则会出现"先补发一条过时答案、再发当前答案"——生产实测就是这样在对话里落后半拍。
+    if (this.abortController?.signal.aborted) {
+      console.log('[DEBUG] [ReActEngine] 本轮已被中断，跳过全部工具调用');
+      return;
+    }
+
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
       const toolArgs = toolCall.function.arguments;
+
+      if (this.abortController?.signal.aborted) {
+        this.emitLog('error', `本轮已被中断，跳过剩余工具 ${toolName}`);
+        return;
+      }
+
+      // 轮次预算：额度用完或本轮已跑太久，就不再调工具，让它用现有信息作答。
+      // 目的是压住"答话滞后"——滞后越久，答案越可能已经过时。
+      const turnElapsed = Date.now() - this.turnStartedAt;
+      const outOfBudget = this.toolCallsThisTurn >= this.maxToolCallsPerTurn;
+      const outOfTime = this.maxTurnMs > 0 && turnElapsed > this.maxTurnMs;
+      if (outOfBudget || outOfTime) {
+        const why = outOfBudget
+          ? `本轮工具额度已用完（${this.maxToolCallsPerTurn} 次）`
+          : `本轮已耗时 ${Math.round(turnElapsed / 1000)}s，超过 ${Math.round(this.maxTurnMs / 1000)}s 上限`;
+        this.emitLog('observation', `${why}，请立即基于已有信息作答，不要再调用工具。`);
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: `${why}。请立刻用你已有的信息给出结论（不要再说"我再去查"，也不要编造）。`,
+        });
+        continue;
+      }
+      this.toolCallsThisTurn += 1;
 
       this.emitLog('action', `Executing ${toolName}...`);
       

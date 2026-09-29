@@ -32,6 +32,13 @@ export class SendMessageTool extends BaseTool {
     const content = args.content as string;
     const { send_url, send_headers } = character.config.connection;
 
+    // 双保险：这一轮若已被更新的消息取代（abort），就不要把过时的话发出去。
+    // 工具执行发生在 abort 之后是可能的——LLM 已经把 tool_call 解析出来了。
+    if (character.react?.isAborted?.()) {
+      console.log('[DEBUG] [Tool: SendMessage] 本轮已中断，放弃发送过时发言');
+      return '（本轮已被更新的消息取代，这条发言没有发出。）';
+    }
+
     console.log(`[DEBUG] [Tool: SendMessage] Sending to ${send_url}`);
 
     try {

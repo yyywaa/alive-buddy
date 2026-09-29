@@ -118,3 +118,26 @@ test('getRecentOwnLines 只返回真正的发言，且最新的在前', () => {
   const lines = manager.getRecentOwnLines(session, 3);
   assert.deepEqual(lines, ['第二句发言', '第一句发言']);
 });
+
+
+test('被中断的那一轮不得再执行工具（防止补发过时答案）', () => {
+  const src = require('node:fs').readFileSync('src/brain/react.ts', 'utf8');
+  assert.match(src, /本轮已被中断，跳过全部工具调用/, 'handleToolCalls 开头应检查 abort');
+  assert.match(src, /跳过剩余工具/, '循环内每个工具执行前也应检查 abort');
+  // 检查点必须在工具真正执行之前
+  const abortIdx = src.indexOf('跳过剩余工具');
+  const execIdx = src.indexOf('await tool.execute');
+  assert.ok(abortIdx > 0 && execIdx > 0 && abortIdx < execIdx, 'abort 检查必须先于 tool.execute');
+  assert.match(src, /isAborted\(\)/, '应暴露中断状态给工具层');
+
+  const send = require('node:fs').readFileSync('src/brain/tools/send_message.ts', 'utf8');
+  assert.match(send, /isAborted/, 'send_message 必须自己再兜一层：中断了就绝不外发');
+});
+
+test('轮次预算存在（工具额度 + 软时限）', () => {
+  const src = require('node:fs').readFileSync('src/brain/react.ts', 'utf8');
+  assert.match(src, /MAX_TOOL_CALLS_PER_TURN/);
+  assert.match(src, /MAX_TURN_MS/);
+  assert.match(src, /本轮工具额度已用完/);
+  assert.match(src, /不要再调用工具/);
+});
