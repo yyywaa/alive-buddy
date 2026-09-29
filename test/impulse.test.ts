@@ -55,6 +55,7 @@ test('唤醒提示包含方向、反重复清单与反套话要求', () => {
   assert.match(prompt, /虚空依旧安静/);
   assert.match(prompt, /不要再换个说法重复/);
   assert.match(prompt, /保持沉默/);
+  assert.match(prompt, /先调用工具查清楚/, '主动开口也应被鼓励先查工具');
 });
 
 test('没有历史发言时不出现空的"最近说过"段落', () => {
