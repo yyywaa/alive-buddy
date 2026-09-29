@@ -81,3 +81,35 @@ test('assembleStreamRecursive 支持多个并行 tool_calls 按索引归位', as
   assert.equal(lastAccumulated.tool_calls[0].function.name, 'send_message');
   assert.deepEqual(JSON.parse(lastAccumulated.tool_calls[1].function.arguments), { mood: 80, reason: '测试' });
 });
+
+test('长流不会爆栈（回归：yield* 递归实现的 Maximum call stack size exceeded）', async () => {
+  // 生产事故：每来一个分片递归一层，长回复直接把调用栈打爆，整轮 reAct 失败。
+  // 这里给 20 万个分片——循环实现只占一个栈帧，递归实现必然溢出。
+  const CHUNKS = 200_000;
+
+  async function* longStream() {
+    for (let i = 0; i < CHUNKS; i++) {
+      yield chunk({ content: 'x' }, i === CHUNKS - 1 ? 'stop' : null);
+    }
+  }
+
+  let last: any = null;
+  let count = 0;
+
+  const gen = LLMCall.assembleStream(longStream());
+  for await (const delta of gen) {
+    last = delta.accumulated;
+    count += 1;
+  }
+
+  assert.equal(count, CHUNKS);
+  assert.equal((last as { content: string }).content.length, CHUNKS, '全部增量都应被拼接');
+});
+
+test('assembleStreamRecursive 别名仍可用（兼容旧调用）', async () => {
+  const gen = LLMCall.assembleStreamRecursive(fakeStream([chunk({ content: 'ok' }, 'stop')])[Symbol.asyncIterator]());
+  const chunks: any[] = [];
+  for await (const c of gen) chunks.push(c);
+  assert.equal(chunks.length, 1);
+  assert.equal((chunks[0].accumulated as { content: string }).content, 'ok');
+});

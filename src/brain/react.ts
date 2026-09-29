@@ -112,7 +112,7 @@ export class ReActEngine {
     // 获取当前 Character 注册的所有工具定义
     const toolDefinitions = character.toolRegistry.getDefinitions() as Tool[];
 
-    const response = await this.llm.call(
+    let response = await this.llm.call(
       messages, 
       toolDefinitions, 
       this.abortController?.signal ?? undefined
@@ -122,19 +122,41 @@ export class ReActEngine {
 
     if (this.isStream(response)) {
       const iterator = response[Symbol.asyncIterator]();
-      const streamGenerator = LLMCall.assembleStreamRecursive(iterator);
+      const streamGenerator = LLMCall.assembleStream(iterator);
       
       let lastAccumulated: unknown = null;
 
-      for await (const delta of streamGenerator) {
-        lastAccumulated = delta.accumulated;
-        if (delta.delta && typeof delta.delta === 'object' && 'content' in delta.delta) {
-          const content = (delta.delta as { content?: string }).content;
-          if (content) this.emitLog('thought', content);
+      try {
+        for await (const delta of streamGenerator) {
+          lastAccumulated = delta.accumulated;
+          if (delta.delta && typeof delta.delta === 'object' && 'content' in delta.delta) {
+            const content = (delta.delta as { content?: string }).content;
+            if (content) this.emitLog('thought', content);
+          }
         }
+      } catch (streamErr: unknown) {
+        // 流式链路出问题时不要让整轮对话失败：退回非流式重试一次。
+        // 生产事故：长回复触发 SDK/组装层的栈溢出，整轮任务失败、玩家得不到任何回应。
+        if (this.abortController?.signal.aborted) throw streamErr;
+        const message = streamErr instanceof Error ? streamErr.message : String(streamErr);
+        this.emitLog('error', `流式响应失败（${message}），改用非流式重试`);
+        console.warn(`[DEBUG] [ReActEngine] stream failed, retrying without stream:`, message);
+        lastAccumulated = null;
+        response = await this.llm.call(messages, toolDefinitions, this.abortController?.signal ?? undefined, false);
       }
       
-      finalAssistantMsg = lastAccumulated as OpenAI.Chat.ChatCompletionAssistantMessageParam;
+      if (lastAccumulated === null && !this.isStream(response)) {
+        const completion = response as OpenAI.Chat.ChatCompletion;
+        finalAssistantMsg = completion.choices[0].message;
+        if (finalAssistantMsg.content) {
+          const contentText = typeof finalAssistantMsg.content === 'string'
+            ? finalAssistantMsg.content
+            : finalAssistantMsg.content.map(c => (c as { text?: string }).text ?? '').join('');
+          this.emitLog('thought', contentText);
+        }
+      } else {
+        finalAssistantMsg = lastAccumulated as OpenAI.Chat.ChatCompletionAssistantMessageParam;
+      }
     } else {
       const completion = response as OpenAI.Chat.ChatCompletion;
       finalAssistantMsg = completion.choices[0].message;

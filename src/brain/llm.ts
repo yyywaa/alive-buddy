@@ -117,33 +117,47 @@ export class LLMCall {
   }
 
   /**
-   * 递归处理流式返回
-   * 使用通用的 deepMerge，不涉及任何硬编码关键字
+   * 逐片合并流式返回。
+   *
+   * 注意：这里必须用**循环**而不是递归。
+   * 原实现是 `yield* this.assembleStreamRecursive(...)`，每来一个分片就多一层 generator 委托，
+   * 长回复（分片数一多）会直接把调用栈打爆：
+   *   RangeError: Maximum call stack size exceeded（生产环境实测，任务整轮失败）。
+   * 循环写法只占一个栈帧，与分片数量无关。
    */
-  public static async *assembleStreamRecursive(
+  public static async *assembleStream(
     iterator: AsyncIterator<OpenAI.Chat.Completions.ChatCompletionChunk>,
     accumulated: unknown = {}
   ): AsyncGenerator<StreamDelta> {
-    const result = await iterator.next();
+    let current = accumulated;
 
-    if (result.done) {
-      return;
+    while (true) {
+      const result = await iterator.next();
+      if (result.done) return;
+
+      const value = result.value;
+      const choice = value.choices?.[0];
+      const delta = choice?.delta;
+      const finishReason = choice?.finish_reason;
+
+      // 执行无视关键字的通用合并
+      current = this.deepMerge(current, delta);
+
+      yield {
+        delta: delta,
+        accumulated: current,
+        is_done: finishReason !== null && finishReason !== undefined,
+      };
     }
+  }
 
-    const value = result.value;
-    const delta = value.choices[0]?.delta;
-    const finishReason = value.choices[0]?.finish_reason;
-    
-    // 执行无视关键字的通用合并
-    const newAccumulated = this.deepMerge(accumulated, delta);
-
-    yield {
-      delta: delta,
-      accumulated: newAccumulated,
-      is_done: finishReason !== null && finishReason !== undefined
-    };
-
-    // 递归调用
-    yield* this.assembleStreamRecursive(iterator, newAccumulated);
+  /**
+   * @deprecated 名字里的 Recursive 已不准确（现在是循环实现），保留别名以兼容旧调用。
+   */
+  public static assembleStreamRecursive(
+    iterator: AsyncIterator<OpenAI.Chat.Completions.ChatCompletionChunk>,
+    accumulated: unknown = {}
+  ): AsyncGenerator<StreamDelta> {
+    return this.assembleStream(iterator, accumulated);
   }
 }
