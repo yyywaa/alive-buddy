@@ -117,8 +117,9 @@ test('assembleStreamRecursive 别名仍可用（兼容旧调用）', async () =>
 test('思考流按段聚合，不是逐 token 一行（日志刷屏回归）', async () => {
   // 生产现象：react.ts 每个流分片都 emitLog，debug WS 打过去就是"一字一行"，
   // 一分钟数百行日志。这里验证聚合阈值：180 个单字分片 → 至多 2 条日志。
+  // 用 cwd 相对路径读取源文件（测试由 npm test 在仓库根目录运行）
   const REACT_SRC = await import('node:fs').then(fs =>
-    fs.readFileSync(new URL('../src/brain/react.ts', import.meta.url), 'utf8'),
+    fs.readFileSync('src/brain/react.ts', 'utf8'),
   );
   assert.match(REACT_SRC, /THOUGHT_FLUSH_CHARS/, '应有聚合阈值常量');
   assert.match(REACT_SRC, /thoughtBuffer \+= content/, '应累积而非逐个 emitLog');
