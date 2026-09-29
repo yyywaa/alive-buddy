@@ -87,8 +87,8 @@ export class WakeStimulus {
 export function buildProactiveWakePrompt(framing: WakeFraming, recentOwnLines: string[] = []): string {
   const recentBlock = recentOwnLines.length > 0
     ? `\n你最近已经说过：\n${recentOwnLines.map(line => `- ${line}`).join('\n')}\n` +
-      `不要再换个说法重复上面这些意思；也留意上面这些句子的**腔调**——如果它们都是同一种嗓子，` +
-      `这次换一副（你有学者腔/君王腔/野兽腔/老贵族腔/旧日腔/刻薄腔）。\n`
+      `不要再换个说法重复上面这些意思；也留意**腔调是否合场合**——谈人类的事可以学者腔，` +
+      `谈龙、末地、你自己就该是末影龙在说话，而不是同一种嗓子从头用到尾。\n`
     : '';
 
   return `（系统提示：这是你自己的主动意识被唤醒了——没有任何人@你或对你说话，是你决定开口的。这不是指令，只是一条内部状态信号。

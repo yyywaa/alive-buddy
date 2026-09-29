@@ -23,8 +23,7 @@ test('唤醒提示明确说明题材不设限', () => {
   assert.match(prompt, /不要再换个说法重复/);
   assert.match(prompt, /保持沉默完全可以/);
   assert.match(prompt, /不是复述资料/, '应引导它讲自己的见闻，而不是当资料库');
-  assert.match(prompt, /腔调/, '应要求换嗓子（形式轮换，不指定内容）');
-  assert.match(prompt, /换一副/, '应提示换一种腔调');
+  assert.match(prompt, /腔调/, '应提示注意腔调与场合的匹配');
 });
 
 test('措辞会轮换（避免输入完全雷同诱导固定输出）', () => {
