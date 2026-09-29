@@ -70,6 +70,13 @@ export class ReActEngine {
    */
   private async execute(character: Character, message: UnifiedMessage): Promise<void> {
     this.abortController = new AbortController();
+
+    // 精力按"一次对话"扣，而不是按"一次 LLM 调用"扣。
+    // 原先写在 stepRecursive 里逐轮扣，加了工具之后一轮对话会走很多轮
+    // （调工具 → 看结果 → 再调），精力被抽干且永远追不上恢复速度（实测长期停在 15/100）。
+    character.runtime_state.energy -= character.runtime_state.energy_consumption_rate;
+    character.runtime_state.energy = Math.max(-100, Math.min(100, character.runtime_state.energy));
+
     console.log(`[DEBUG] [ReActEngine] Executing loop for ${character.config.name}`);
 
     try {
@@ -104,10 +111,6 @@ export class ReActEngine {
     if (this.abortController?.signal.aborted) {
       throw new Error('AbortError');
     }
-
-    // 每一轮循环消耗精力，并限制在模型接受的 [-100, 100] 范围内
-    character.runtime_state.energy -= character.runtime_state.energy_consumption_rate;
-    character.runtime_state.energy = Math.max(-100, Math.min(100, character.runtime_state.energy));
 
     // 获取当前 Character 注册的所有工具定义
     const toolDefinitions = character.toolRegistry.getDefinitions() as Tool[];

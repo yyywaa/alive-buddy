@@ -15,6 +15,8 @@ export class Character {
   public memoryManager: MemoryManager;
   /** 主动发言的刺激源：每次唤醒换一个话题域，避免反复念叨同一件事 */
   public wakeStimulus: WakeStimulus = new WakeStimulus();
+  /** 上次把运行状态落盘的时间（用于降频，见 updateState） */
+  private lastStateSavedAt = 0;
   public runtime_state: {
     mood: number;
     energy: number;
@@ -106,7 +108,20 @@ export class Character {
 
     this.runtime_state.last_state_update_at = now;
 
-    // 持久化运行状态，保证进程重启后可恢复（崩溃最多丢失一个更新周期内的演化）
+    // 状态持久化降频：脉搏默认每 60s 一跳，原先每跳都写一次 SQLite（1440 次/天，WAL 持续增长）。
+    // 状态是随时间连续演化的，隔几分钟落一次盘足够，崩溃最多丢一个保存周期的演化。
+    const saveIntervalMs = Number(process.env.STATE_SAVE_INTERVAL_MS ?? 5 * 60 * 1000);
+    const sinceSave = now - (this.lastStateSavedAt ?? 0);
+    if (sinceSave < saveIntervalMs) {
+      console.log(
+        `[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, ` +
+        `Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)} ` +
+        `（距上次落盘 ${Math.round(sinceSave / 1000)}s，跳过持久化）`
+      );
+      return;
+    }
+    this.lastStateSavedAt = now;
+
     this.memoryManager.saveRuntimeState({
       mood: this.runtime_state.mood,
       energy: this.runtime_state.energy,
@@ -117,14 +132,16 @@ export class Character {
       last_active_session_id: this.runtime_state.last_active_session_id,
     });
 
-    console.log(`[DEBUG] [${this.config.name}] State updated: Mood=${this.runtime_state.mood.toFixed(1)}, Energy=${this.runtime_state.energy.toFixed(1)}, Boredom=${this.runtime_state.boredom.toFixed(1)}`);
   }
 
   /**
    * 核心脉搏：处理状态自然演化，并判定是否主动触发消息
    */
   public async pulse(): Promise<ImpulseResponse | null> {
-    console.log(`[DEBUG] [${this.config.name}] Pulse check triggered.`);
+    // 脉搏默认每 60s 一跳（1440 次/天），逐跳打满日志会淹掉真正重要的信息：
+    // 默认只留一行简报，判定要开口时才输出完整决策。
+    const pulseVerbose = (process.env.PULSE_VERBOSE ?? 'false').toLowerCase() === 'true';
+    if (pulseVerbose) console.log(`[DEBUG] [${this.config.name}] Pulse check triggered.`);
     
     // 脉搏跳动时，先自然演化一下状态
     this.updateState();
@@ -159,7 +176,17 @@ export class Character {
 
     // 调用 ML sidecar 进行 proactive 判定
     const decision = await defaultProactiveEngine.decide(this.runtime_state);
-    console.log(`[DEBUG] [${this.config.name}] Proactive decision:`, decision);
+
+    if (decision.shouldAct) {
+      console.log(`[DEBUG] [${this.config.name}] Proactive decision:`, decision);
+    } else if (pulseVerbose) {
+      console.log(`[DEBUG] [${this.config.name}] Proactive decision:`, decision);
+    } else {
+      console.log(
+        `[DEBUG] [${this.config.name}] Pulse: 保持沉默（p=${decision.probability.toFixed(3)} < ${decision.threshold}，` +
+        `${decision.reason.slice(0, 60)}）`
+      );
+    }
 
     if (!decision.shouldAct) {
       return {

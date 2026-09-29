@@ -137,6 +137,29 @@ function clampInt(value: number, min: number, max: number): number {
 }
 
 /**
- * 默认引擎实例
+ * 默认引擎实例。
+ *
+ * 两个参数都从环境变量读取，便于按部署环境调节打扰程度：
+ *   PROACTIVE_THRESHOLD          触发阈值（默认 0.5，越高越安静）
+ *   PROACTIVE_MIN_INTERVAL_MS    两次主动发言之间的最小间隔（默认 5 分钟）
  */
-export const defaultProactiveEngine = new ProactiveEngine();
+export function envNumber(name: string, fallback: number, env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    console.warn(`[DEBUG] [Proactive] ${name}=${raw} 不是合法数字，回退到 ${fallback}`);
+    return fallback;
+  }
+  return value;
+}
+
+/** 按环境变量构造引擎（便于测试与按部署环境调打扰程度）。 */
+export function createProactiveEngine(env: NodeJS.ProcessEnv = process.env): ProactiveEngine {
+  return new ProactiveEngine({
+    threshold: envNumber('PROACTIVE_THRESHOLD', 0.5, env),
+    minIntervalMs: envNumber('PROACTIVE_MIN_INTERVAL_MS', 5 * 60 * 1000, env),
+  });
+}
+
+export const defaultProactiveEngine = createProactiveEngine();

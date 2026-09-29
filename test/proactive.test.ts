@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ProactiveEngine, ProactiveState } from '../src/brain/proactive.js';
+import { ProactiveEngine, ProactiveState, createProactiveEngine, envNumber } from '../src/brain/proactive.js';
 import { ProactiveModelClient } from '../src/ml/client.js';
 
 function stubClient(probability: number | null): ProactiveModelClient {
@@ -62,4 +62,27 @@ test('decide 在 sidecar 不可用时优雅降级', async () => {
 
   assert.equal(decision.shouldAct, false);
   assert.match(decision.reason, /unavailable/);
+});
+
+test('createProactiveEngine 按环境变量调节阈值与最小间隔', async () => {
+  const engine = createProactiveEngine({
+    PROACTIVE_THRESHOLD: '0.8',
+    PROACTIVE_MIN_INTERVAL_MS: '600000',
+  } as unknown as NodeJS.ProcessEnv);
+
+  // 阈值 0.8：概率 0.6 不再触发（默认阈值 0.5 时会触发）
+  const sticky = new ProactiveEngine({ client: stubClient(0.6), threshold: 0.8 });
+  assert.equal((await sticky.decide(baseState)).shouldAct, false);
+
+  // 最小间隔 10 分钟：5 分钟前开口过 → 抑制
+  const decision = await engine.decide({ ...baseState, last_pulse_at: Date.now() - 5 * 60 * 1000 });
+  assert.equal(decision.shouldAct, false);
+  assert.match(decision.reason, /Too soon/);
+});
+
+test('envNumber 对非法值回退到默认', () => {
+  assert.equal(envNumber('PROACTIVE_THRESHOLD', 0.5, { PROACTIVE_THRESHOLD: 'abc' } as unknown as NodeJS.ProcessEnv), 0.5);
+  assert.equal(envNumber('PROACTIVE_THRESHOLD', 0.5, { PROACTIVE_THRESHOLD: '-3' } as unknown as NodeJS.ProcessEnv), 0.5);
+  assert.equal(envNumber('PROACTIVE_THRESHOLD', 0.5, {} as unknown as NodeJS.ProcessEnv), 0.5);
+  assert.equal(envNumber('PROACTIVE_THRESHOLD', 0.5, { PROACTIVE_THRESHOLD: '0.7' } as unknown as NodeJS.ProcessEnv), 0.7);
 });
